@@ -1,4 +1,5 @@
 // Employee Management System - Main JavaScript
+// Now uses REST API with SQLite database backend
 
 // ==================== State Management ====================
 const state = {
@@ -15,85 +16,60 @@ const state = {
     }
 };
 
-// ==================== Sample Data ====================
-const sampleDepartments = [
-    { id: 1, name: 'Engineering', code: 'ENG', head: 'John Smith', employees: 25, budget: 500000, description: 'Software development and technical operations' },
-    { id: 2, name: 'Human Resources', code: 'HR', head: 'Sarah Johnson', employees: 8, budget: 150000, description: 'Talent acquisition and employee relations' },
-    { id: 3, name: 'Marketing', code: 'MKT', head: 'Mike Wilson', employees: 15, budget: 300000, description: 'Brand management and digital marketing' },
-    { id: 4, name: 'Finance', code: 'FIN', head: 'Emily Brown', employees: 12, budget: 250000, description: 'Financial planning and accounting' },
-    { id: 5, name: 'Sales', code: 'SLS', head: 'David Lee', employees: 20, budget: 400000, description: 'Business development and client relations' },
-    { id: 6, name: 'Operations', code: 'OPS', head: 'Lisa Chen', employees: 18, budget: 350000, description: 'Daily operations and logistics' }
-];
+const API_BASE = '/api';
 
-const sampleEmployees = [
-    { id: 1, employeeId: 'EMP001', firstName: 'John', lastName: 'Smith', email: 'john.smith@company.com', phone: '+36 30 123 4567', department: 'Engineering', position: 'Senior Developer', joinDate: '2022-03-15', employmentType: 'full-time', salary: 95000, address: '123 Tech Street, Budapest', status: 'active' },
-    { id: 2, employeeId: 'EMP002', firstName: 'Sarah', lastName: 'Johnson', email: 'sarah.johnson@company.com', phone: '+36 30 234 5678', department: 'Human Resources', position: 'HR Manager', joinDate: '2021-06-01', employmentType: 'full-time', salary: 85000, address: '456 People Avenue, Budapest', status: 'active' },
-    { id: 3, employeeId: 'EMP003', firstName: 'Mike', lastName: 'Wilson', email: 'mike.wilson@company.com', phone: '+36 30 345 6789', department: 'Marketing', position: 'Marketing Director', joinDate: '2020-09-10', employmentType: 'full-time', salary: 105000, address: '789 Brand Boulevard, Budapest', status: 'active' },
-    { id: 4, employeeId: 'EMP004', firstName: 'Emily', lastName: 'Brown', email: 'emily.brown@company.com', phone: '+36 30 456 7890', department: 'Finance', position: 'Financial Analyst', joinDate: '2023-01-20', employmentType: 'full-time', salary: 75000, address: '321 Money Lane, Budapest', status: 'active' },
-    { id: 5, employeeId: 'EMP005', firstName: 'David', lastName: 'Lee', email: 'david.lee@company.com', phone: '+36 30 567 8901', department: 'Sales', position: 'Sales Representative', joinDate: '2023-05-12', employmentType: 'full-time', salary: 65000, address: '654 Commerce Road, Budapest', status: 'active' },
-    { id: 6, employeeId: 'EMP006', firstName: 'Lisa', lastName: 'Chen', email: 'lisa.chen@company.com', phone: '+36 30 678 9012', department: 'Operations', position: 'Operations Manager', joinDate: '2022-08-05', employmentType: 'full-time', salary: 90000, address: '987 Logistics Way, Budapest', status: 'active' },
-    { id: 7, employeeId: 'EMP007', firstName: 'James', lastName: 'Taylor', email: 'james.taylor@company.com', phone: '+36 30 789 0123', department: 'Engineering', position: 'Junior Developer', joinDate: '2024-02-01', employmentType: 'full-time', salary: 55000, address: '147 Code Street, Budapest', status: 'active' },
-    { id: 8, employeeId: 'EMP008', firstName: 'Anna', lastName: 'Martinez', email: 'anna.martinez@company.com', phone: '+36 30 890 1234', department: 'Marketing', position: 'Content Specialist', joinDate: '2023-11-15', employmentType: 'part-time', salary: 45000, address: '258 Creative Avenue, Budapest', status: 'active' },
-    { id: 9, employeeId: 'EMP009', firstName: 'Robert', lastName: 'Garcia', email: 'robert.garcia@company.com', phone: '+36 30 901 2345', department: 'Sales', position: 'Account Executive', joinDate: '2022-04-20', employmentType: 'full-time', salary: 70000, address: '369 Business Park, Budapest', status: 'inactive' },
-    { id: 10, employeeId: 'EMP010', firstName: 'Maria', lastName: 'Rodriguez', email: 'maria.rodriguez@company.com', phone: '+36 30 012 3456', department: 'Human Resources', position: 'Recruiter', joinDate: '2023-07-08', employmentType: 'full-time', salary: 60000, address: '471 Talent Street, Budapest', status: 'active' }
-];
+// ==================== API Helper ====================
+async function api(endpoint, method = 'GET', body = null) {
+    const options = {
+        method,
+        headers: { 'Content-Type': 'application/json' }
+    };
+    if (body) options.body = JSON.stringify(body);
 
-const sampleAttendance = [
-    { id: 1, employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', checkIn: '09:00', checkOut: '18:00', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-    { id: 2, employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', checkIn: '08:45', checkOut: '17:45', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-    { id: 3, employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', checkIn: '09:15', checkOut: '18:15', hoursWorked: 9, status: 'late', date: '2026-09-25' },
-    { id: 4, employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', checkIn: '09:00', checkOut: '18:00', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-    { id: 5, employeeId: 'EMP005', name: 'David Lee', department: 'Sales', checkIn: '-', checkOut: '-', hoursWorked: 0, status: 'absent', date: '2026-09-25' },
-    { id: 6, employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', checkIn: '08:55', checkOut: '17:55', hoursWorked: 9, status: 'present', date: '2026-09-25' }
-];
-
-const samplePerformance = [
-    { id: 1, employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', score: 92, rating: 'Excellent', period: 'Q3 2026', review: 'Outstanding technical contributions and leadership' },
-    { id: 2, employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', score: 88, rating: 'Very Good', period: 'Q3 2026', review: 'Excellent people management skills' },
-    { id: 3, employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', score: 95, rating: 'Excellent', period: 'Q3 2026', review: 'Exceptional campaign results' },
-    { id: 4, employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', score: 85, rating: 'Very Good', period: 'Q3 2026', review: 'Strong analytical capabilities' },
-    { id: 5, employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', score: 90, rating: 'Excellent', period: 'Q3 2026', review: 'Improved operational efficiency significantly' }
-];
-
-const samplePayroll = [
-    { id: 1, employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', basicSalary: 95000, allowances: 15000, deductions: 12000, netSalary: 98000, status: 'paid', month: 'September 2026' },
-    { id: 2, employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', basicSalary: 85000, allowances: 12000, deductions: 10000, netSalary: 87000, status: 'paid', month: 'September 2026' },
-    { id: 3, employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', basicSalary: 105000, allowances: 18000, deductions: 14000, netSalary: 109000, status: 'pending', month: 'September 2026' },
-    { id: 4, employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', basicSalary: 75000, allowances: 10000, deductions: 8000, netSalary: 77000, status: 'paid', month: 'September 2026' },
-    { id: 5, employeeId: 'EMP005', name: 'David Lee', department: 'Sales', basicSalary: 65000, allowances: 20000, deductions: 9000, netSalary: 76000, status: 'pending', month: 'September 2026' },
-    { id: 6, employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', basicSalary: 90000, allowances: 14000, deductions: 11000, netSalary: 93000, status: 'paid', month: 'September 2026' }
-];
-
-const sampleLeave = [
-    { id: 1, employee: 'John Smith', employeeId: 'EMP001', type: 'sick', fromDate: '2026-09-20', toDate: '2026-09-22', days: 3, reason: 'Medical appointment', status: 'approved' },
-    { id: 2, employee: 'Sarah Johnson', employeeId: 'EMP002', type: 'annual', fromDate: '2026-10-01', toDate: '2026-10-10', days: 10, reason: 'Family vacation', status: 'pending' },
-    { id: 3, employee: 'Mike Wilson', employeeId: 'EMP003', type: 'casual', fromDate: '2026-09-18', toDate: '2026-09-19', days: 2, reason: 'Personal matters', status: 'approved' },
-    { id: 4, employee: 'Emily Brown', employeeId: 'EMP004', type: 'sick', fromDate: '2026-09-25', toDate: '2026-09-26', days: 2, reason: 'Flu', status: 'pending' },
-    { id: 5, employee: 'David Lee', employeeId: 'EMP005', type: 'annual', fromDate: '2026-11-15', toDate: '2026-11-30', days: 16, reason: 'Extended travel', status: 'rejected' },
-    { id: 6, employee: 'Lisa Chen', employeeId: 'EMP006', type: 'maternity', fromDate: '2026-12-01', toDate: '2027-03-01', days: 90, reason: 'Maternity leave', status: 'approved' }
-];
+    const response = await fetch(`${API_BASE}${endpoint}`, options);
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(err.error || 'Request failed');
+    }
+    return response.json();
+}
 
 // ==================== Initialization ====================
 document.addEventListener('DOMContentLoaded', function() {
     initializeData();
     setupEventListeners();
-    renderDashboard();
-    renderEmployees();
-    renderDepartments();
-    renderAttendance();
-    renderPerformance();
-    renderPayroll();
-    renderLeave();
-    updateDropdowns();
 });
 
-function initializeData() {
-    state.departments = sampleDepartments;
-    state.employees = sampleEmployees;
-    state.attendance = sampleAttendance;
-    state.performance = samplePerformance;
-    state.payroll = samplePayroll;
-    state.leave = sampleLeave;
+async function initializeData() {
+    try {
+        const [employees, departments, attendance, performance, payroll, leave] = await Promise.all([
+            api('/employees'),
+            api('/departments'),
+            api('/attendance'),
+            api('/performance'),
+            api('/payroll'),
+            api('/leave')
+        ]);
+
+        state.employees = employees;
+        state.departments = departments;
+        state.attendance = attendance;
+        state.performance = performance;
+        state.payroll = payroll;
+        state.leave = leave;
+
+        renderDashboard();
+        renderEmployees();
+        renderDepartments();
+        renderAttendance();
+        renderPerformance();
+        renderPayroll();
+        renderLeave();
+        updateDropdowns();
+    } catch (err) {
+        console.error('Failed to load data:', err);
+        showToast('Failed to load data from server', 'error');
+    }
 }
 
 // ==================== Event Listeners ====================
@@ -369,16 +345,21 @@ function editEmployee(id) {
     if (employee) openEmployeeModal(employee);
 }
 
-function deleteEmployee(id) {
+async function deleteEmployee(id) {
     if (confirm('Are you sure you want to delete this employee?')) {
-        state.employees = state.employees.filter(e => e.id !== id);
-        renderEmployees();
-        renderDashboard();
-        showToast('Employee deleted successfully!', 'success');
+        try {
+            await api(`/employees/${id}`, 'DELETE');
+            state.employees = state.employees.filter(e => e.id !== id);
+            renderEmployees();
+            renderDashboard();
+            showToast('Employee deleted successfully!', 'success');
+        } catch (err) {
+            showToast('Failed to delete employee: ' + err.message, 'error');
+        }
     }
 }
 
-function saveEmployee() {
+async function saveEmployee() {
     const form = document.getElementById('employeeForm');
     const editId = form.dataset.editId;
 
@@ -397,22 +378,25 @@ function saveEmployee() {
         status: form.status.value
     };
 
-    if (editId) {
-        const index = state.employees.findIndex(e => e.id === parseInt(editId));
-        if (index !== -1) {
-            state.employees[index] = { ...state.employees[index], ...employeeData };
+    try {
+        if (editId) {
+            const updated = await api(`/employees/${editId}`, 'PUT', employeeData);
+            const index = state.employees.findIndex(e => e.id === parseInt(editId));
+            if (index !== -1) state.employees[index] = updated;
             showToast('Employee updated successfully!', 'success');
+        } else {
+            const newEmp = await api('/employees', 'POST', employeeData);
+            state.employees.push(newEmp);
+            showToast('Employee added successfully!', 'success');
         }
-    } else {
-        const newId = Math.max(...state.employees.map(e => e.id)) + 1;
-        state.employees.push({ id: newId, ...employeeData });
-        showToast('Employee added successfully!', 'success');
-    }
 
-    closeModal('employeeModal');
-    renderEmployees();
-    renderDashboard();
-    updateDropdowns();
+        closeModal('employeeModal');
+        renderEmployees();
+        renderDashboard();
+        updateDropdowns();
+    } catch (err) {
+        showToast('Failed to save employee: ' + err.message, 'error');
+    }
 }
 
 // ==================== Departments ====================
@@ -459,17 +443,22 @@ function editDepartment(id) {
     if (department) openDepartmentModal(department);
 }
 
-function deleteDepartment(id) {
+async function deleteDepartment(id) {
     if (confirm('Are you sure you want to delete this department?')) {
-        state.departments = state.departments.filter(d => d.id !== id);
-        renderDepartments();
-        renderDashboard();
-        updateDropdowns();
-        showToast('Department deleted successfully!', 'success');
+        try {
+            await api(`/departments/${id}`, 'DELETE');
+            state.departments = state.departments.filter(d => d.id !== id);
+            renderDepartments();
+            renderDashboard();
+            updateDropdowns();
+            showToast('Department deleted successfully!', 'success');
+        } catch (err) {
+            showToast('Failed to delete department: ' + err.message, 'error');
+        }
     }
 }
 
-function saveDepartment() {
+async function saveDepartment() {
     const form = document.getElementById('departmentForm');
     const editId = form.dataset.editId;
 
@@ -482,22 +471,25 @@ function saveDepartment() {
         employees: Math.floor(Math.random() * 30) + 5
     };
 
-    if (editId) {
-        const index = state.departments.findIndex(d => d.id === parseInt(editId));
-        if (index !== -1) {
-            state.departments[index] = { ...state.departments[index], ...departmentData };
+    try {
+        if (editId) {
+            const updated = await api(`/departments/${editId}`, 'PUT', departmentData);
+            const index = state.departments.findIndex(d => d.id === parseInt(editId));
+            if (index !== -1) state.departments[index] = updated;
             showToast('Department updated successfully!', 'success');
+        } else {
+            const newDept = await api('/departments', 'POST', departmentData);
+            state.departments.push(newDept);
+            showToast('Department added successfully!', 'success');
         }
-    } else {
-        const newId = Math.max(...state.departments.map(d => d.id)) + 1;
-        state.departments.push({ id: newId, ...departmentData });
-        showToast('Department added successfully!', 'success');
-    }
 
-    closeModal('departmentModal');
-    renderDepartments();
-    renderDashboard();
-    updateDropdowns();
+        closeModal('departmentModal');
+        renderDepartments();
+        renderDashboard();
+        updateDropdowns();
+    } catch (err) {
+        showToast('Failed to save department: ' + err.message, 'error');
+    }
 }
 
 // ==================== Attendance ====================
@@ -519,7 +511,7 @@ function renderAttendance() {
             <td>${att.hoursWorked} hrs</td>
             <td><span class="status-badge ${att.status}">${att.status}</span></td>
             <td>
-                <button class="btn-icon" onclick="markAttendance('${att.employeeId}')" title="Mark">
+                <button class="btn-icon" onclick="markAttendance('${att.employeeId}', ${att.id})" title="Mark">
                     <i class="fas fa-check"></i>
                 </button>
                 <button class="btn-icon" onclick="editAttendance(${att.id})" title="Edit">
@@ -530,15 +522,20 @@ function renderAttendance() {
     `).join('');
 }
 
-function markAttendance(employeeId) {
-    const attendance = state.attendance.find(a => a.employeeId === employeeId);
-    if (attendance) {
-        attendance.status = 'present';
-        attendance.checkIn = '09:00';
-        attendance.checkOut = '18:00';
-        attendance.hoursWorked = 9;
+async function markAttendance(employeeId, id) {
+    try {
+        const updated = await api(`/attendance/${id}`, 'PUT', {
+            checkIn: '09:00',
+            checkOut: '18:00',
+            hoursWorked: 9,
+            status: 'present'
+        });
+        const index = state.attendance.findIndex(a => a.id === id);
+        if (index !== -1) state.attendance[index] = updated;
         renderAttendance();
         showToast('Attendance marked!', 'success');
+    } catch (err) {
+        showToast('Failed to mark attendance: ' + err.message, 'error');
     }
 }
 
@@ -590,7 +587,7 @@ function renderPayroll() {
                 <button class="btn-icon" onclick="viewPayslip('${pay.employeeId}')" title="View Payslip">
                     <i class="fas fa-file-invoice"></i>
                 </button>
-                <button class="btn-icon" onclick="processPayment('${pay.employeeId}')" title="Process Payment">
+                <button class="btn-icon" onclick="processPayment('${pay.employeeId}', ${pay.id})" title="Process Payment">
                     <i class="fas fa-money-bill"></i>
                 </button>
             </td>
@@ -602,12 +599,15 @@ function viewPayslip(employeeId) {
     showToast(`Payslip for ${employeeId} generated`, 'success');
 }
 
-function processPayment(employeeId) {
-    const payroll = state.payroll.find(p => p.employeeId === employeeId);
-    if (payroll) {
-        payroll.status = 'paid';
+async function processPayment(employeeId, id) {
+    try {
+        const updated = await api(`/payroll/${id}`, 'PUT', { status: 'paid' });
+        const index = state.payroll.findIndex(p => p.id === id);
+        if (index !== -1) state.payroll[index] = updated;
         renderPayroll();
         showToast('Payment processed successfully!', 'success');
+    } catch (err) {
+        showToast('Failed to process payment: ' + err.message, 'error');
     }
 }
 
@@ -641,21 +641,27 @@ function renderLeave() {
     `).join('');
 }
 
-function approveLeave(id) {
-    const leave = state.leave.find(l => l.id === id);
-    if (leave) {
-        leave.status = 'approved';
+async function approveLeave(id) {
+    try {
+        const updated = await api(`/leave/${id}`, 'PUT', { status: 'approved' });
+        const index = state.leave.findIndex(l => l.id === id);
+        if (index !== -1) state.leave[index] = updated;
         renderLeave();
         showToast('Leave request approved!', 'success');
+    } catch (err) {
+        showToast('Failed to approve leave: ' + err.message, 'error');
     }
 }
 
-function rejectLeave(id) {
-    const leave = state.leave.find(l => l.id === id);
-    if (leave) {
-        leave.status = 'rejected';
+async function rejectLeave(id) {
+    try {
+        const updated = await api(`/leave/${id}`, 'PUT', { status: 'rejected' });
+        const index = state.leave.findIndex(l => l.id === id);
+        if (index !== -1) state.leave[index] = updated;
         renderLeave();
         showToast('Leave request rejected', 'success');
+    } catch (err) {
+        showToast('Failed to reject leave: ' + err.message, 'error');
     }
 }
 

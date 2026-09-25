@@ -1,20 +1,24 @@
 {
   "version": 2,
   "name": "employee-management-system",
-  "builds": [
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    }
-  ],
   "routes": [
     {
       "src": "/styles.css",
-      "dest": "/styles.css"
+      "dest": "/styles.css",
+      "headers": {
+        "Content-Type": "text/css"
+      }
     },
     {
       "src": "/script.js",
-      "dest": "/script.js"
+      "dest": "/script.js",
+      "headers": {
+        "Content-Type": "application/javascript"
+      }
+    },
+    {
+      "src": "/(.*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot))",
+      "dest": "/$1"
     },
     {
       "src": "/(.*)",
