@@ -1,23 +1,56 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const path = require('path');
 
 const DB_PATH = path.join(__dirname, 'ems.db');
 
-let db;
+let db = null;
+let dbReady = null; // Promise that resolves when DB is initialized
 
-function getDatabase() {
-    if (!db) {
-        db = new Database(DB_PATH);
-        db.pragma('journal_mode = WAL');
-        db.pragma('foreign_keys = ON');
-        initializeTables();
-        seedDataIfEmpty();
+function getDbReadyPromise() {
+    if (!dbReady) {
+        dbReady = initializeDatabase();
     }
+    return dbReady;
+}
+
+async function initializeDatabase() {
+    const SQL = await initSqlJs();
+
+    // Load existing DB file or create new one
+    if (fs.existsSync(DB_PATH)) {
+        const fileBuffer = fs.readFileSync(DB_PATH);
+        db = new SQL.Database(fileBuffer);
+        console.log('Loaded existing database from', DB_PATH);
+    } else {
+        db = new SQL.Database();
+        console.log('Created new database');
+    }
+
+    db.run('PRAGMA journal_mode = WAL');
+    db.run('PRAGMA foreign_keys = ON');
+
+    initializeTables();
+    seedDataIfEmpty();
+    saveDatabase();
+
     return db;
 }
 
+function getDatabase() {
+    return db;
+}
+
+function saveDatabase() {
+    if (db) {
+        const data = db.export();
+        const buffer = Buffer.from(data);
+        fs.writeFileSync(DB_PATH, buffer);
+    }
+}
+
 function initializeTables() {
-    db.exec(`
+    db.run(`
         CREATE TABLE IF NOT EXISTS departments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
@@ -26,8 +59,10 @@ function initializeTables() {
             employees INTEGER DEFAULT 0,
             budget REAL DEFAULT 0,
             description TEXT
-        );
+        )
+    `);
 
+    db.run(`
         CREATE TABLE IF NOT EXISTS employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employeeId TEXT NOT NULL UNIQUE,
@@ -42,8 +77,10 @@ function initializeTables() {
             salary REAL DEFAULT 0,
             address TEXT,
             status TEXT DEFAULT 'active'
-        );
+        )
+    `);
 
+    db.run(`
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employeeId TEXT NOT NULL,
@@ -54,8 +91,10 @@ function initializeTables() {
             hoursWorked REAL DEFAULT 0,
             status TEXT DEFAULT 'absent',
             date TEXT
-        );
+        )
+    `);
 
+    db.run(`
         CREATE TABLE IF NOT EXISTS performance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employeeId TEXT NOT NULL,
@@ -65,8 +104,10 @@ function initializeTables() {
             rating TEXT,
             period TEXT,
             review TEXT
-        );
+        )
+    `);
 
+    db.run(`
         CREATE TABLE IF NOT EXISTS payroll (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employeeId TEXT NOT NULL,
@@ -78,8 +119,10 @@ function initializeTables() {
             netSalary REAL DEFAULT 0,
             status TEXT DEFAULT 'pending',
             month TEXT
-        );
+        )
+    `);
 
+    db.run(`
         CREATE TABLE IF NOT EXISTS leave_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             employee TEXT NOT NULL,
@@ -90,145 +133,132 @@ function initializeTables() {
             days INTEGER DEFAULT 0,
             reason TEXT,
             status TEXT DEFAULT 'pending'
-        );
+        )
     `);
 }
 
+// Helper: run a SELECT and return array of row objects
+function queryAll(sql, params = []) {
+    const stmt = db.prepare(sql);
+    if (params.length > 0) stmt.bind(params);
+    const results = [];
+    while (stmt.step()) {
+        results.push(stmt.getAsObject());
+    }
+    stmt.free();
+    return results;
+}
+
+// Helper: run a SELECT and return first row object or null
+function queryOne(sql, params = []) {
+    const rows = queryAll(sql, params);
+    return rows.length > 0 ? rows[0] : null;
+}
+
+// Helper: run INSERT/UPDATE/DELETE, return { changes, lastInsertRowid }
+function runSql(sql, params = []) {
+    db.run(sql, params);
+    const changes = db.getRowsModified();
+    const lastId = queryOne('SELECT last_insert_rowid() as id');
+    saveDatabase(); // Persist after every write
+    return { changes, lastInsertRowid: lastId ? lastId.id : 0 };
+}
+
 function seedDataIfEmpty() {
-    const count = db.prepare('SELECT COUNT(*) as cnt FROM departments').get();
-    if (count.cnt > 0) return; // Already seeded
+    const count = queryOne('SELECT COUNT(*) as cnt FROM departments');
+    if (count && count.cnt > 0) return; // Already seeded
 
     // Seed Departments
-    const insertDept = db.prepare(`
-        INSERT INTO departments (name, code, head, employees, budget, description)
-        VALUES (@name, @code, @head, @employees, @budget, @description)
-    `);
-
     const departments = [
-        { name: 'Engineering', code: 'ENG', head: 'John Smith', employees: 25, budget: 500000, description: 'Software development and technical operations' },
-        { name: 'Human Resources', code: 'HR', head: 'Sarah Johnson', employees: 8, budget: 150000, description: 'Talent acquisition and employee relations' },
-        { name: 'Marketing', code: 'MKT', head: 'Mike Wilson', employees: 15, budget: 300000, description: 'Brand management and digital marketing' },
-        { name: 'Finance', code: 'FIN', head: 'Emily Brown', employees: 12, budget: 250000, description: 'Financial planning and accounting' },
-        { name: 'Sales', code: 'SLS', head: 'David Lee', employees: 20, budget: 400000, description: 'Business development and client relations' },
-        { name: 'Operations', code: 'OPS', head: 'Lisa Chen', employees: 18, budget: 350000, description: 'Daily operations and logistics' }
+        ['Engineering', 'ENG', 'John Smith', 25, 500000, 'Software development and technical operations'],
+        ['Human Resources', 'HR', 'Sarah Johnson', 8, 150000, 'Talent acquisition and employee relations'],
+        ['Marketing', 'MKT', 'Mike Wilson', 15, 300000, 'Brand management and digital marketing'],
+        ['Finance', 'FIN', 'Emily Brown', 12, 250000, 'Financial planning and accounting'],
+        ['Sales', 'SLS', 'David Lee', 20, 400000, 'Business development and client relations'],
+        ['Operations', 'OPS', 'Lisa Chen', 18, 350000, 'Daily operations and logistics']
     ];
-
-    const seedDepts = db.transaction(() => {
-        for (const dept of departments) insertDept.run(dept);
-    });
-    seedDepts();
+    for (const d of departments) {
+        db.run('INSERT INTO departments (name, code, head, employees, budget, description) VALUES (?, ?, ?, ?, ?, ?)', d);
+    }
 
     // Seed Employees
-    const insertEmp = db.prepare(`
-        INSERT INTO employees (employeeId, firstName, lastName, email, phone, department, position, joinDate, employmentType, salary, address, status)
-        VALUES (@employeeId, @firstName, @lastName, @email, @phone, @department, @position, @joinDate, @employmentType, @salary, @address, @status)
-    `);
-
     const employees = [
-        { employeeId: 'EMP001', firstName: 'John', lastName: 'Smith', email: 'john.smith@company.com', phone: '+36 30 123 4567', department: 'Engineering', position: 'Senior Developer', joinDate: '2022-03-15', employmentType: 'full-time', salary: 95000, address: '123 Tech Street, Budapest', status: 'active' },
-        { employeeId: 'EMP002', firstName: 'Sarah', lastName: 'Johnson', email: 'sarah.johnson@company.com', phone: '+36 30 234 5678', department: 'Human Resources', position: 'HR Manager', joinDate: '2021-06-01', employmentType: 'full-time', salary: 85000, address: '456 People Avenue, Budapest', status: 'active' },
-        { employeeId: 'EMP003', firstName: 'Mike', lastName: 'Wilson', email: 'mike.wilson@company.com', phone: '+36 30 345 6789', department: 'Marketing', position: 'Marketing Director', joinDate: '2020-09-10', employmentType: 'full-time', salary: 105000, address: '789 Brand Boulevard, Budapest', status: 'active' },
-        { employeeId: 'EMP004', firstName: 'Emily', lastName: 'Brown', email: 'emily.brown@company.com', phone: '+36 30 456 7890', department: 'Finance', position: 'Financial Analyst', joinDate: '2023-01-20', employmentType: 'full-time', salary: 75000, address: '321 Money Lane, Budapest', status: 'active' },
-        { employeeId: 'EMP005', firstName: 'David', lastName: 'Lee', email: 'david.lee@company.com', phone: '+36 30 567 8901', department: 'Sales', position: 'Sales Representative', joinDate: '2023-05-12', employmentType: 'full-time', salary: 65000, address: '654 Commerce Road, Budapest', status: 'active' },
-        { employeeId: 'EMP006', firstName: 'Lisa', lastName: 'Chen', email: 'lisa.chen@company.com', phone: '+36 30 678 9012', department: 'Operations', position: 'Operations Manager', joinDate: '2022-08-05', employmentType: 'full-time', salary: 90000, address: '987 Logistics Way, Budapest', status: 'active' },
-        { employeeId: 'EMP007', firstName: 'James', lastName: 'Taylor', email: 'james.taylor@company.com', phone: '+36 30 789 0123', department: 'Engineering', position: 'Junior Developer', joinDate: '2024-02-01', employmentType: 'full-time', salary: 55000, address: '147 Code Street, Budapest', status: 'active' },
-        { employeeId: 'EMP008', firstName: 'Anna', lastName: 'Martinez', email: 'anna.martinez@company.com', phone: '+36 30 890 1234', department: 'Marketing', position: 'Content Specialist', joinDate: '2023-11-15', employmentType: 'part-time', salary: 45000, address: '258 Creative Avenue, Budapest', status: 'active' },
-        { employeeId: 'EMP009', firstName: 'Robert', lastName: 'Garcia', email: 'robert.garcia@company.com', phone: '+36 30 901 2345', department: 'Sales', position: 'Account Executive', joinDate: '2022-04-20', employmentType: 'full-time', salary: 70000, address: '369 Business Park, Budapest', status: 'inactive' },
-        { employeeId: 'EMP010', firstName: 'Maria', lastName: 'Rodriguez', email: 'maria.rodriguez@company.com', phone: '+36 30 012 3456', department: 'Human Resources', position: 'Recruiter', joinDate: '2023-07-08', employmentType: 'full-time', salary: 60000, address: '471 Talent Street, Budapest', status: 'active' }
+        ['EMP001', 'John', 'Smith', 'john.smith@company.com', '+36 30 123 4567', 'Engineering', 'Senior Developer', '2022-03-15', 'full-time', 95000, '123 Tech Street, Budapest', 'active'],
+        ['EMP002', 'Sarah', 'Johnson', 'sarah.johnson@company.com', '+36 30 234 5678', 'Human Resources', 'HR Manager', '2021-06-01', 'full-time', 85000, '456 People Avenue, Budapest', 'active'],
+        ['EMP003', 'Mike', 'Wilson', 'mike.wilson@company.com', '+36 30 345 6789', 'Marketing', 'Marketing Director', '2020-09-10', 'full-time', 105000, '789 Brand Boulevard, Budapest', 'active'],
+        ['EMP004', 'Emily', 'Brown', 'emily.brown@company.com', '+36 30 456 7890', 'Finance', 'Financial Analyst', '2023-01-20', 'full-time', 75000, '321 Money Lane, Budapest', 'active'],
+        ['EMP005', 'David', 'Lee', 'david.lee@company.com', '+36 30 567 8901', 'Sales', 'Sales Representative', '2023-05-12', 'full-time', 65000, '654 Commerce Road, Budapest', 'active'],
+        ['EMP006', 'Lisa', 'Chen', 'lisa.chen@company.com', '+36 30 678 9012', 'Operations', 'Operations Manager', '2022-08-05', 'full-time', 90000, '987 Logistics Way, Budapest', 'active'],
+        ['EMP007', 'James', 'Taylor', 'james.taylor@company.com', '+36 30 789 0123', 'Engineering', 'Junior Developer', '2024-02-01', 'full-time', 55000, '147 Code Street, Budapest', 'active'],
+        ['EMP008', 'Anna', 'Martinez', 'anna.martinez@company.com', '+36 30 890 1234', 'Marketing', 'Content Specialist', '2023-11-15', 'part-time', 45000, '258 Creative Avenue, Budapest', 'active'],
+        ['EMP009', 'Robert', 'Garcia', 'robert.garcia@company.com', '+36 30 901 2345', 'Sales', 'Account Executive', '2022-04-20', 'full-time', 70000, '369 Business Park, Budapest', 'inactive'],
+        ['EMP010', 'Maria', 'Rodriguez', 'maria.rodriguez@company.com', '+36 30 012 3456', 'Human Resources', 'Recruiter', '2023-07-08', 'full-time', 60000, '471 Talent Street, Budapest', 'active']
     ];
-
-    const seedEmps = db.transaction(() => {
-        for (const emp of employees) insertEmp.run(emp);
-    });
-    seedEmps();
+    for (const e of employees) {
+        db.run('INSERT INTO employees (employeeId, firstName, lastName, email, phone, department, position, joinDate, employmentType, salary, address, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', e);
+    }
 
     // Seed Attendance
-    const insertAtt = db.prepare(`
-        INSERT INTO attendance (employeeId, name, department, checkIn, checkOut, hoursWorked, status, date)
-        VALUES (@employeeId, @name, @department, @checkIn, @checkOut, @hoursWorked, @status, @date)
-    `);
-
     const attendance = [
-        { employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', checkIn: '09:00', checkOut: '18:00', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-        { employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', checkIn: '08:45', checkOut: '17:45', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-        { employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', checkIn: '09:15', checkOut: '18:15', hoursWorked: 9, status: 'late', date: '2026-09-25' },
-        { employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', checkIn: '09:00', checkOut: '18:00', hoursWorked: 9, status: 'present', date: '2026-09-25' },
-        { employeeId: 'EMP005', name: 'David Lee', department: 'Sales', checkIn: '-', checkOut: '-', hoursWorked: 0, status: 'absent', date: '2026-09-25' },
-        { employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', checkIn: '08:55', checkOut: '17:55', hoursWorked: 9, status: 'present', date: '2026-09-25' }
+        ['EMP001', 'John Smith', 'Engineering', '09:00', '18:00', 9, 'present', '2026-09-25'],
+        ['EMP002', 'Sarah Johnson', 'Human Resources', '08:45', '17:45', 9, 'present', '2026-09-25'],
+        ['EMP003', 'Mike Wilson', 'Marketing', '09:15', '18:15', 9, 'late', '2026-09-25'],
+        ['EMP004', 'Emily Brown', 'Finance', '09:00', '18:00', 9, 'present', '2026-09-25'],
+        ['EMP005', 'David Lee', 'Sales', '-', '-', 0, 'absent', '2026-09-25'],
+        ['EMP006', 'Lisa Chen', 'Operations', '08:55', '17:55', 9, 'present', '2026-09-25']
     ];
-
-    const seedAtt = db.transaction(() => {
-        for (const att of attendance) insertAtt.run(att);
-    });
-    seedAtt();
+    for (const a of attendance) {
+        db.run('INSERT INTO attendance (employeeId, name, department, checkIn, checkOut, hoursWorked, status, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', a);
+    }
 
     // Seed Performance
-    const insertPerf = db.prepare(`
-        INSERT INTO performance (employeeId, name, department, score, rating, period, review)
-        VALUES (@employeeId, @name, @department, @score, @rating, @period, @review)
-    `);
-
     const performance = [
-        { employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', score: 92, rating: 'Excellent', period: 'Q3 2026', review: 'Outstanding technical contributions and leadership' },
-        { employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', score: 88, rating: 'Very Good', period: 'Q3 2026', review: 'Excellent people management skills' },
-        { employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', score: 95, rating: 'Excellent', period: 'Q3 2026', review: 'Exceptional campaign results' },
-        { employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', score: 85, rating: 'Very Good', period: 'Q3 2026', review: 'Strong analytical capabilities' },
-        { employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', score: 90, rating: 'Excellent', period: 'Q3 2026', review: 'Improved operational efficiency significantly' }
+        ['EMP001', 'John Smith', 'Engineering', 92, 'Excellent', 'Q3 2026', 'Outstanding technical contributions and leadership'],
+        ['EMP002', 'Sarah Johnson', 'Human Resources', 88, 'Very Good', 'Q3 2026', 'Excellent people management skills'],
+        ['EMP003', 'Mike Wilson', 'Marketing', 95, 'Excellent', 'Q3 2026', 'Exceptional campaign results'],
+        ['EMP004', 'Emily Brown', 'Finance', 85, 'Very Good', 'Q3 2026', 'Strong analytical capabilities'],
+        ['EMP006', 'Lisa Chen', 'Operations', 90, 'Excellent', 'Q3 2026', 'Improved operational efficiency significantly']
     ];
-
-    const seedPerf = db.transaction(() => {
-        for (const perf of performance) insertPerf.run(perf);
-    });
-    seedPerf();
+    for (const p of performance) {
+        db.run('INSERT INTO performance (employeeId, name, department, score, rating, period, review) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
+    }
 
     // Seed Payroll
-    const insertPay = db.prepare(`
-        INSERT INTO payroll (employeeId, name, department, basicSalary, allowances, deductions, netSalary, status, month)
-        VALUES (@employeeId, @name, @department, @basicSalary, @allowances, @deductions, @netSalary, @status, @month)
-    `);
-
     const payroll = [
-        { employeeId: 'EMP001', name: 'John Smith', department: 'Engineering', basicSalary: 95000, allowances: 15000, deductions: 12000, netSalary: 98000, status: 'paid', month: 'September 2026' },
-        { employeeId: 'EMP002', name: 'Sarah Johnson', department: 'Human Resources', basicSalary: 85000, allowances: 12000, deductions: 10000, netSalary: 87000, status: 'paid', month: 'September 2026' },
-        { employeeId: 'EMP003', name: 'Mike Wilson', department: 'Marketing', basicSalary: 105000, allowances: 18000, deductions: 14000, netSalary: 109000, status: 'pending', month: 'September 2026' },
-        { employeeId: 'EMP004', name: 'Emily Brown', department: 'Finance', basicSalary: 75000, allowances: 10000, deductions: 8000, netSalary: 77000, status: 'paid', month: 'September 2026' },
-        { employeeId: 'EMP005', name: 'David Lee', department: 'Sales', basicSalary: 65000, allowances: 20000, deductions: 9000, netSalary: 76000, status: 'pending', month: 'September 2026' },
-        { employeeId: 'EMP006', name: 'Lisa Chen', department: 'Operations', basicSalary: 90000, allowances: 14000, deductions: 11000, netSalary: 93000, status: 'paid', month: 'September 2026' }
+        ['EMP001', 'John Smith', 'Engineering', 95000, 15000, 12000, 98000, 'paid', 'September 2026'],
+        ['EMP002', 'Sarah Johnson', 'Human Resources', 85000, 12000, 10000, 87000, 'paid', 'September 2026'],
+        ['EMP003', 'Mike Wilson', 'Marketing', 105000, 18000, 14000, 109000, 'pending', 'September 2026'],
+        ['EMP004', 'Emily Brown', 'Finance', 75000, 10000, 8000, 77000, 'paid', 'September 2026'],
+        ['EMP005', 'David Lee', 'Sales', 65000, 20000, 9000, 76000, 'pending', 'September 2026'],
+        ['EMP006', 'Lisa Chen', 'Operations', 90000, 14000, 11000, 93000, 'paid', 'September 2026']
     ];
-
-    const seedPay = db.transaction(() => {
-        for (const pay of payroll) insertPay.run(pay);
-    });
-    seedPay();
+    for (const p of payroll) {
+        db.run('INSERT INTO payroll (employeeId, name, department, basicSalary, allowances, deductions, netSalary, status, month) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p);
+    }
 
     // Seed Leave Requests
-    const insertLeave = db.prepare(`
-        INSERT INTO leave_requests (employee, employeeId, type, fromDate, toDate, days, reason, status)
-        VALUES (@employee, @employeeId, @type, @fromDate, @toDate, @days, @reason, @status)
-    `);
-
     const leaveRequests = [
-        { employee: 'John Smith', employeeId: 'EMP001', type: 'sick', fromDate: '2026-09-20', toDate: '2026-09-22', days: 3, reason: 'Medical appointment', status: 'approved' },
-        { employee: 'Sarah Johnson', employeeId: 'EMP002', type: 'annual', fromDate: '2026-10-01', toDate: '2026-10-10', days: 10, reason: 'Family vacation', status: 'pending' },
-        { employee: 'Mike Wilson', employeeId: 'EMP003', type: 'casual', fromDate: '2026-09-18', toDate: '2026-09-19', days: 2, reason: 'Personal matters', status: 'approved' },
-        { employee: 'Emily Brown', employeeId: 'EMP004', type: 'sick', fromDate: '2026-09-25', toDate: '2026-09-26', days: 2, reason: 'Flu', status: 'pending' },
-        { employee: 'David Lee', employeeId: 'EMP005', type: 'annual', fromDate: '2026-11-15', toDate: '2026-11-30', days: 16, reason: 'Extended travel', status: 'rejected' },
-        { employee: 'Lisa Chen', employeeId: 'EMP006', type: 'maternity', fromDate: '2026-12-01', toDate: '2027-03-01', days: 90, reason: 'Maternity leave', status: 'approved' }
+        ['John Smith', 'EMP001', 'sick', '2026-09-20', '2026-09-22', 3, 'Medical appointment', 'approved'],
+        ['Sarah Johnson', 'EMP002', 'annual', '2026-10-01', '2026-10-10', 10, 'Family vacation', 'pending'],
+        ['Mike Wilson', 'EMP003', 'casual', '2026-09-18', '2026-09-19', 2, 'Personal matters', 'approved'],
+        ['Emily Brown', 'EMP004', 'sick', '2026-09-25', '2026-09-26', 2, 'Flu', 'pending'],
+        ['David Lee', 'EMP005', 'annual', '2026-11-15', '2026-11-30', 16, 'Extended travel', 'rejected'],
+        ['Lisa Chen', 'EMP006', 'maternity', '2026-12-01', '2027-03-01', 90, 'Maternity leave', 'approved']
     ];
-
-    const seedLeave = db.transaction(() => {
-        for (const lv of leaveRequests) insertLeave.run(lv);
-    });
-    seedLeave();
+    for (const l of leaveRequests) {
+        db.run('INSERT INTO leave_requests (employee, employeeId, type, fromDate, toDate, days, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', l);
+    }
 
     console.log('Database seeded with sample data.');
 }
 
 function closeDatabase() {
     if (db) {
+        saveDatabase();
         db.close();
         db = null;
+        dbReady = null;
     }
 }
 
-module.exports = { getDatabase, closeDatabase };
+module.exports = { getDbReadyPromise, getDatabase, queryAll, queryOne, runSql, saveDatabase, closeDatabase };
