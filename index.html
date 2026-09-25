@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Management System</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="logo">
+                <h2><i class="fas fa-users-cog"></i> EMS</h2>
+            </div>
+            <nav class="menu">
+                <ul>
+                    <li class="active" data-section="dashboard">
+                        <a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    </li>
+                    <li data-section="employees">
+                        <a href="#"><i class="fas fa-user-tie"></i> Employees</a>
+                    </li>
+                    <li data-section="departments">
+                        <a href="#"><i class="fas fa-building"></i> Departments</a>
+                    </li>
+                    <li data-section="attendance">
+                        <a href="#"><i class="fas fa-calendar-check"></i> Attendance</a>
+                    </li>
+                    <li data-section="performance">
+                        <a href="#"><i class="fas fa-chart-line"></i> Performance</a>
+                    </li>
+                    <li data-section="payroll">
+                        <a href="#"><i class="fas fa-money-bill-wave"></i> Payroll</a>
+                    </li>
+                    <li data-section="leave">
+                        <a href="#"><i class="fas fa-plane-departure"></i> Leave Management</a>
+                    </li>
+                    <li data-section="reports">
+                        <a href="#"><i class="fas fa-file-alt"></i> Reports</a>
+                    </li>
+                    <li data-section="settings">
+                        <a href="#"><i class="fas fa-cog"></i> Settings</a>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="menu-toggle" id="menuToggle">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 id="pageTitle">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <i class="fas fa-search"></i>
+                        <input type="text" placeholder="Search employees..." id="globalSearch">
+                    </div>
+                    <div class="notifications">
+                        <i class="fas fa-bell"></i>
+                        <span class="badge">3</span>
+                    </div>
+                    <div class="user-profile">
+                        <img src="https://ui-avatars.com/api/?name=Admin+User&background=4F46E5&color=fff" alt="Admin">
+                        <span>Admin User</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Section -->
+            <section id="dashboard" class="content-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Total Employees</h3>
+                            <p class="stat-number" id="totalEmployees">0</p>
+                            <span class="stat-change positive">+12% this month</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon green">
+                            <i class="fas fa-user-check"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Present Today</h3>
+                            <p class="stat-number" id="presentToday">0</p>
+                            <span class="stat-change positive">95% attendance</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon orange">
+                            <i class="fas fa-plane-departure"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>On Leave</h3>
+                            <p class="stat-number" id="onLeave">0</p>
+                            <span class="stat-change neutral">5 pending requests</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon purple">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h3>Departments</h3>
+                            <p class="stat-number" id="totalDepartments">0</p>
+                            <span class="stat-change positive">Active</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="dashboard-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Recent Employees</h3>
+                            <a href="#" class="view-all" onclick="showSection('employees')">View All</a>
+                        </div>
+                        <div class="card-body">
+                            <table class="data-table" id="recentEmployeesTable">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Department</th>
+                                        <th>Position</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Attendance Overview</h3>
+                            <select id="attendancePeriod">
+                                <option value="week">This Week</option>
+                                <option value="month">This Month</option>
+                            </select>
+                        </div>
+                        <div class="card-body">
+                            <div class="attendance-chart" id="attendanceChart">
+                                <canvas id="attendanceCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Employees Section -->
+            <section id="employees" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <select id="departmentFilter">
+                            <option value="">All Departments</option>
+                        </select>
+                        <select id="statusFilter">
+                            <option value="">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="addEmployeeBtn">
+                        <i class="fas fa-plus"></i> Add Employee
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="data-table" id="employeesTable">
+                            <thead>
+                                <tr>
+                                    <th>
+                                        <input type="checkbox" id="selectAll">
+                                    </th>
+                                    <th>Employee ID</th>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Department</th>
+                                    <th>Position</th>
+                                    <th>Join Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Departments Section -->
+            <section id="departments" class="content-section">
+                <div class="section-header">
+                    <div class="search-departments">
+                        <input type="text" placeholder="Search departments..." id="departmentSearch">
+                    </div>
+                    <button class="btn btn-primary" id="addDepartmentBtn">
+                        <i class="fas fa-plus"></i> Add Department
+                    </button>
+                </div>
+
+                <div class="departments-grid" id="departmentsGrid"></div>
+            </section>
+
+            <!-- Attendance Section -->
+            <section id="attendance" class="content-section">
+                <div class="section-header">
+                    <div class="date-filter">
+                        <input type="date" id="attendanceDate" value="2026-09-25">
+                    </div>
+                    <button class="btn btn-success" id="markAttendanceBtn">
+                        <i class="fas fa-check"></i> Mark Attendance
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="data-table" id="attendanceTable">
+                            <thead>
+                                <tr>
+                                    <th>Employee ID</th>
+                                    <th>Name</th>
+                                    <th>Department</th>
+                                    <th>Check In</th>
+                                    <th>Check Out</th>
+                                    <th>Hours Worked</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Performance Section -->
+            <section id="performance" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <select id="performancePeriod">
+                            <option value="monthly">Monthly</option>
+                            <option value="quarterly">Quarterly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                        <select id="performanceDepartment">
+                            <option value="">All Departments</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="addReviewBtn">
+                        <i class="fas fa-plus"></i> Add Review
+                    </button>
+                </div>
+
+                <div class="performance-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Performance Distribution</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="performance-chart">
+                                <canvas id="performanceCanvas"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>Top Performers</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="data-table" id="topPerformersTable">
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Employee</th>
+                                        <th>Department</th>
+                                        <th>Score</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Payroll Section -->
+            <section id="payroll" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <select id="payrollMonth">
+                            <option value="9">September 2026</option>
+                            <option value="8">August 2026</option>
+                            <option value="7">July 2026</option>
+                        </select>
+                        <select id="payrollDepartment">
+                            <option value="">All Departments</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="generatePayrollBtn">
+                        <i class="fas fa-file-invoice-dollar"></i> Generate Payroll
+                    </button>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="data-table" id="payrollTable">
+                            <thead>
+                                <tr>
+                                    <th>Employee ID</th>
+                                    <th>Name</th>
+                                    <th>Department</th>
+                                    <th>Basic Salary</th>
+                                    <th>Allowances</th>
+                                    <th>Deductions</th>
+                                    <th>Net Salary</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Leave Management Section -->
+            <section id="leave" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <select id="leaveStatus">
+                            <option value="">All Status</option>
+                            <option value="pending">Pending</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                        <select id="leaveType">
+                            <option value="">All Types</option>
+                            <option value="sick">Sick Leave</option>
+                            <option value="casual">Casual Leave</option>
+                            <option value="annual">Annual Leave</option>
+                            <option value="maternity">Maternity Leave</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" id="requestLeaveBtn">
+                        <i class="fas fa-plus"></i> Request Leave
+                    </button>
+                </div>
+
+                <div class="leave-stats">
+                    <div class="leave-stat-card">
+                        <h4>Sick Leave</h4>
+                        <div class="leave-balance">
+                            <span class="used">Used: 3</span>
+                            <span class="remaining">Remaining: 9</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress" style="width: 25%"></div>
+                        </div>
+                    </div>
+                    <div class="leave-stat-card">
+                        <h4>Casual Leave</h4>
+                        <div class="leave-balance">
+                            <span class="used">Used: 5</span>
+                            <span class="remaining">Remaining: 7</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress" style="width: 42%"></div>
+                        </div>
+                    </div>
+                    <div class="leave-stat-card">
+                        <h4>Annual Leave</h4>
+                        <div class="leave-balance">
+                            <span class="used">Used: 8</span>
+                            <span class="remaining">Remaining: 22</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress" style="width: 27%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <table class="data-table" id="leaveTable">
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Leave Type</th>
+                                    <th>From Date</th>
+                                    <th>To Date</th>
+                                    <th>Days</th>
+                                    <th>Reason</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section id="reports" class="content-section">
+                <div class="reports-grid">
+                    <div class="report-card" onclick="generateReport('attendance')">
+                        <div class="report-icon">
+                            <i class="fas fa-calendar-check"></i>
+                        </div>
+                        <h3>Attendance Report</h3>
+                        <p>Daily, weekly, and monthly attendance summaries</p>
+                    </div>
+                    <div class="report-card" onclick="generateReport('performance')">
+                        <div class="report-icon">
+                            <i class="fas fa-chart-line"></i>
+                        </div>
+                        <h3>Performance Report</h3>
+                        <p>Employee performance metrics and reviews</p>
+                    </div>
+                    <div class="report-card" onclick="generateReport('payroll')">
+                        <div class="report-icon">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                        <h3>Payroll Report</h3>
+                        <p>Salary breakdowns and payment history</p>
+                    </div>
+                    <div class="report-card" onclick="generateReport('leave')">
+                        <div class="report-icon">
+                            <i class="fas fa-plane-departure"></i>
+                        </div>
+                        <h3>Leave Report</h3>
+                        <p>Leave balances and request history</p>
+                    </div>
+                    <div class="report-card" onclick="generateReport('department')">
+                        <div class="report-icon">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <h3>Department Report</h3>
+                        <p>Department-wise employee distribution</p>
+                    </div>
+                    <div class="report-card" onclick="generateReport('employee')">
+                        <div class="report-icon">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <h3>Employee Report</h3>
+                        <p>Complete employee directory and details</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Settings Section -->
+            <section id="settings" class="content-section">
+                <div class="settings-grid">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-building"></i> Company Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <form id="companySettingsForm">
+                                <div class="form-group">
+                                    <label>Company Name</label>
+                                    <input type="text" value="Tech Solutions Inc." class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Industry</label>
+                                    <input type="text" value="Information Technology" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Working Hours</label>
+                                    <div class="time-range">
+                                        <input type="time" value="09:00" class="form-control">
+                                        <span>to</span>
+                                        <input type="time" value="18:00" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Working Days</label>
+                                    <div class="checkbox-group">
+                                        <label><input type="checkbox" checked> Mon</label>
+                                        <label><input type="checkbox" checked> Tue</label>
+                                        <label><input type="checkbox" checked> Wed</label>
+                                        <label><input type="checkbox" checked> Thu</label>
+                                        <label><input type="checkbox" checked> Fri</label>
+                                        <label><input type="checkbox"> Sat</label>
+                                        <label><input type="checkbox"> Sun</label>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Save Settings</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-user-shield"></i> User Management</h3>
+                        </div>
+                        <div class="card-body">
+                            <table class="data-table" id="usersTable">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Role</th>
+                                        <th>Last Login</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <div class="user-info">
+                                                <img src="https://ui-avatars.com/api/?name=Admin+User&background=4F46E5&color=fff" alt="Admin">
+                                                <span>Admin User</span>
+                                            </div>
+                                        </td>
+                                        <td>Administrator</td>
+                                        <td>Today, 2:30 PM</td>
+                                        <td><span class="status-badge active">Active</span></td>
+                                        <td>
+                                            <button class="btn-icon"><i class="fas fa-edit"></i></button>
+                                            <button class="btn-icon"><i class="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <div class="user-info">
+                                                <img src="https://ui-avatars.com/api/?name=HR+Manager&background=10B981&color=fff" alt="HR">
+                                                <span>HR Manager</span>
+                                            </div>
+                                        </td>
+                                        <td>HR Manager</td>
+                                        <td>Yesterday, 5:45 PM</td>
+                                        <td><span class="status-badge active">Active</span></td>
+                                        <td>
+                                            <button class="btn-icon"><i class="fas fa-edit"></i></button>
+                                            <button class="btn-icon"><i class="fas fa-trash"></i></button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <button class="btn btn-primary" style="margin-top: 1rem;">
+                                <i class="fas fa-plus"></i> Add User
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-bell"></i> Notification Settings</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="setting-item">
+                                <div class="setting-label">
+                                    <h4>Email Notifications</h4>
+                                    <p>Receive email updates for important events</p>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-label">
+                                    <h4>Leave Requests</h4>
+                                    <p>Get notified when employees request leave</p>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-label">
+                                    <h4>Attendance Alerts</h4>
+                                    <p>Receive alerts for late check-ins</p>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-label">
+                                    <h4>Performance Reviews</h4>
+                                    <p>Notifications for upcoming reviews</p>
+                                </div>
+                                <label class="switch">
+                                    <input type="checkbox" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3><i class="fas fa-database"></i> Data Management</h3>
+                        </div>
+                        <div class="card-body">
+                            <div class="data-actions">
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-download"></i> Export Data
+                                </button>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-upload"></i> Import Data
+                                </button>
+                                <button class="btn btn-outline">
+                                    <i class="fas fa-sync"></i> Backup Data
+                                </button>
+                                <button class="btn btn-danger">
+                                    <i class="fas fa-trash"></i> Clear Cache
+                                </button>
+                            </div>
+                            <div class="storage-info">
+                                <h4>Storage Usage</h4>
+                                <div class="progress-bar">
+                                    <div class="progress" style="width: 65%"></div>
+                                </div>
+                                <p>6.5 GB of 10 GB used</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Add Employee Modal -->
+    <div class="modal" id="employeeModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3 id="employeeModalTitle">Add New Employee</h3>
+                <button class="modal-close" onclick="closeModal('employeeModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="employeeForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>First Name *</label>
+                            <input type="text" name="firstName" required class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Last Name *</label>
+                            <input type="text" name="lastName" required class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Email *</label>
+                            <input type="email" name="email" required class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Phone</label>
+                            <input type="tel" name="phone" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Department *</label>
+                            <select name="department" required class="form-control" id="employeeDepartment">
+                                <option value="">Select Department</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Position *</label>
+                            <input type="text" name="position" required class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Employee ID *</label>
+                            <input type="text" name="employeeId" required class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label>Join Date *</label>
+                            <input type="date" name="joinDate" required class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Employment Type</label>
+                            <select name="employmentType" class="form-control">
+                                <option value="full-time">Full Time</option>
+                                <option value="part-time">Part Time</option>
+                                <option value="contract">Contract</option>
+                                <option value="internship">Internship</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Salary</label>
+                            <input type="number" name="salary" class="form-control">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Address</label>
+                        <textarea name="address" rows="2" class="form-control"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select name="status" class="form-control">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('employeeModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Employee</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Department Modal -->
+    <div class="modal" id="departmentModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="departmentModalTitle">Add New Department</h3>
+                <button class="modal-close" onclick="closeModal('departmentModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="departmentForm">
+                    <div class="form-group">
+                        <label>Department Name *</label>
+                        <input type="text" name="name" required class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Department Code</label>
+                        <input type="text" name="code" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Head of Department</label>
+                        <select name="head" class="form-control" id="departmentHead">
+                            <option value="">Select Employee</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea name="description" rows="3" class="form-control"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Budget</label>
+                        <input type="number" name="budget" class="form-control">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('departmentModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save Department</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Employee Details Modal -->
+    <div class="modal" id="employeeDetailsModal">
+        <div class="modal-content modal-large">
+            <div class="modal-header">
+                <h3>Employee Details</h3>
+                <button class="modal-close" onclick="closeModal('employeeDetailsModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="employee-profile">
+                    <div class="profile-header">
+                        <img src="" alt="Employee" id="detailImage" class="profile-image">
+                        <div class="profile-info">
+                            <h2 id="detailName"></h2>
+                            <p id="detailPosition"></p>
+                            <p id="detailDepartment"></p>
+                        </div>
+                    </div>
+                    <div class="profile-details">
+                        <div class="detail-row">
+                            <div class="detail-item">
+                                <label>Email</label>
+                                <p id="detailEmail"></p>
+                            </div>
+                            <div class="detail-item">
+                                <label>Phone</label>
+                                <p id="detailPhone"></p>
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-item">
+                                <label>Employee ID</label>
+                                <p id="detailId"></p>
+                            </div>
+                            <div class="detail-item">
+                                <label>Join Date</label>
+                                <p id="detailJoinDate"></p>
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-item">
+                                <label>Employment Type</label>
+                                <p id="detailType"></p>
+                            </div>
+                            <div class="detail-item">
+                                <label>Salary</label>
+                                <p id="detailSalary"></p>
+                            </div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-item">
+                                <label>Address</label>
+                                <p id="detailAddress"></p>
+                            </div>
+                            <div class="detail-item">
+                                <label>Status</label>
+                                <p id="detailStatus"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
