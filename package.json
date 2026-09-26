@@ -1,16 +1,17 @@
 {
   "name": "employee-management-system",
   "version": "1.0.0",
-  "description": "Employee Management System with Express and SQLite",
+  "description": "Duna Networks Employee Management System with Vercel Postgres",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "db:init": "node scripts/init-db.js"
   },
   "dependencies": {
+    "@vercel/postgres": "^0.10.0",
     "cors": "^2.8.5",
-    "express": "^4.21.0",
-    "sql.js": "^1.11.0"
+    "express": "^4.21.0"
   },
   "engines": {
     "node": ">=18.0.0"

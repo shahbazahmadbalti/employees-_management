@@ -1,20 +1,26 @@
 {
   "version": 2,
-  "name": "employee-management-system",
+  "name": "duna-networks-ems",
+  "builds": [
+    {
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
   "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js"
+    },
     {
       "src": "/styles.css",
       "dest": "/styles.css",
-      "headers": {
-        "Content-Type": "text/css"
-      }
+      "headers": { "Content-Type": "text/css" }
     },
     {
       "src": "/script.js",
       "dest": "/script.js",
-      "headers": {
-        "Content-Type": "application/javascript"
-      }
+      "headers": { "Content-Type": "application/javascript" }
     },
     {
       "src": "/(.*\\.(css|js|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|eot))",
@@ -29,18 +35,9 @@
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "X-Content-Type-Options",
-          "value": "nosniff"
-        },
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "X-XSS-Protection",
-          "value": "1; mode=block"
-        }
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" }
       ]
     }
   ]

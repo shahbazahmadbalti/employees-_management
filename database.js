@@ -1,103 +1,55 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
+const { sql } = require('@vercel/postgres');
 
-const DB_PATH = path.join(__dirname, 'ems.db');
-
-let db = null;
-let dbReady = null; // Promise that resolves when DB is initialized
-
-function getDbReadyPromise() {
-    if (!dbReady) {
-        dbReady = initializeDatabase();
-    }
-    return dbReady;
-}
-
-async function initializeDatabase() {
-    const SQL = await initSqlJs();
-
-    // Load existing DB file or create new one
-    if (fs.existsSync(DB_PATH)) {
-        const fileBuffer = fs.readFileSync(DB_PATH);
-        db = new SQL.Database(fileBuffer);
-        console.log('Loaded existing database from', DB_PATH);
-    } else {
-        db = new SQL.Database();
-        console.log('Created new database');
-    }
-
-    db.run('PRAGMA journal_mode = WAL');
-    db.run('PRAGMA foreign_keys = ON');
-
-    initializeTables();
-    seedDataIfEmpty();
-    saveDatabase();
-
-    return db;
-}
-
-function getDatabase() {
-    return db;
-}
-
-function saveDatabase() {
-    if (db) {
-        const data = db.export();
-        const buffer = Buffer.from(data);
-        fs.writeFileSync(DB_PATH, buffer);
-    }
-}
-
-function initializeTables() {
-    db.run(`
+// ==================== Table Creation ====================
+async function initializeTables() {
+    await sql`
         CREATE TABLE IF NOT EXISTS departments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             code TEXT,
             head TEXT,
             employees INTEGER DEFAULT 0,
-            budget REAL DEFAULT 0,
+            budget NUMERIC DEFAULT 0,
             description TEXT
         )
-    `);
+    `;
 
-    db.run(`
+    await sql`
         CREATE TABLE IF NOT EXISTS employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employeeId TEXT NOT NULL UNIQUE,
-            firstName TEXT NOT NULL,
-            lastName TEXT NOT NULL,
+            id SERIAL PRIMARY KEY,
+            employee_id TEXT NOT NULL UNIQUE,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
             email TEXT NOT NULL,
             phone TEXT,
             department TEXT,
             position TEXT,
-            joinDate TEXT,
-            employmentType TEXT DEFAULT 'full-time',
-            salary REAL DEFAULT 0,
+            join_date TEXT,
+            employment_type TEXT DEFAULT 'full-time',
+            salary NUMERIC DEFAULT 0,
             address TEXT,
             status TEXT DEFAULT 'active'
         )
-    `);
+    `;
 
-    db.run(`
+    await sql`
         CREATE TABLE IF NOT EXISTS attendance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employeeId TEXT NOT NULL,
+            id SERIAL PRIMARY KEY,
+            employee_id TEXT NOT NULL,
             name TEXT,
             department TEXT,
-            checkIn TEXT,
-            checkOut TEXT,
-            hoursWorked REAL DEFAULT 0,
+            check_in TEXT,
+            check_out TEXT,
+            hours_worked NUMERIC DEFAULT 0,
             status TEXT DEFAULT 'absent',
             date TEXT
         )
-    `);
+    `;
 
-    db.run(`
+    await sql`
         CREATE TABLE IF NOT EXISTS performance (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employeeId TEXT NOT NULL,
+            id SERIAL PRIMARY KEY,
+            employee_id TEXT NOT NULL,
             name TEXT,
             department TEXT,
             score INTEGER DEFAULT 0,
@@ -105,68 +57,49 @@ function initializeTables() {
             period TEXT,
             review TEXT
         )
-    `);
+    `;
 
-    db.run(`
+    await sql`
         CREATE TABLE IF NOT EXISTS payroll (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employeeId TEXT NOT NULL,
+            id SERIAL PRIMARY KEY,
+            employee_id TEXT NOT NULL,
             name TEXT,
             department TEXT,
-            basicSalary REAL DEFAULT 0,
-            allowances REAL DEFAULT 0,
-            deductions REAL DEFAULT 0,
-            netSalary REAL DEFAULT 0,
+            basic_salary NUMERIC DEFAULT 0,
+            allowances NUMERIC DEFAULT 0,
+            deductions NUMERIC DEFAULT 0,
+            net_salary NUMERIC DEFAULT 0,
             status TEXT DEFAULT 'pending',
             month TEXT
         )
-    `);
+    `;
 
-    db.run(`
+    await sql`
         CREATE TABLE IF NOT EXISTS leave_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             employee TEXT NOT NULL,
-            employeeId TEXT NOT NULL,
+            employee_id TEXT NOT NULL,
             type TEXT,
-            fromDate TEXT,
-            toDate TEXT,
+            from_date TEXT,
+            to_date TEXT,
             days INTEGER DEFAULT 0,
             reason TEXT,
             status TEXT DEFAULT 'pending'
         )
-    `);
+    `;
+
+    console.log('All tables created successfully.');
 }
 
-// Helper: run a SELECT and return array of row objects
-function queryAll(sql, params = []) {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const results = [];
-    while (stmt.step()) {
-        results.push(stmt.getAsObject());
+// ==================== Seed Data ====================
+async function seedDataIfEmpty() {
+    const { rows } = await sql`SELECT COUNT(*) as cnt FROM departments`;
+    if (parseInt(rows[0].cnt) > 0) {
+        console.log('Database already seeded, skipping.');
+        return;
     }
-    stmt.free();
-    return results;
-}
 
-// Helper: run a SELECT and return first row object or null
-function queryOne(sql, params = []) {
-    const rows = queryAll(sql, params);
-    return rows.length > 0 ? rows[0] : null;
-}
-
-// Helper: run INSERT/UPDATE/DELETE, return { changes, lastInsertRowid }
-function runSql(sql, params = []) {
-    db.run(sql, params);
-    const changes = db.getRowsModified();
-    const lastId = queryOne('SELECT last_insert_rowid() as id');
-    saveDatabase(); // Persist after every write
-    return { changes, lastInsertRowid: lastId ? lastId.id : 0 };
-}
-
-function seedDataIfEmpty() {
-    const count = queryOne('SELECT COUNT(*) as cnt FROM departments');
-    if (count && count.cnt > 0) return; // Already seeded
+    console.log('Seeding database with sample data...');
 
     // Seed Departments
     const departments = [
@@ -178,7 +111,7 @@ function seedDataIfEmpty() {
         ['Operations', 'OPS', 'Lisa Chen', 18, 350000, 'Daily operations and logistics']
     ];
     for (const d of departments) {
-        db.run('INSERT INTO departments (name, code, head, employees, budget, description) VALUES (?, ?, ?, ?, ?, ?)', d);
+        await sql`INSERT INTO departments (name, code, head, employees, budget, description) VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, ${d[5]})`;
     }
 
     // Seed Employees
@@ -195,7 +128,7 @@ function seedDataIfEmpty() {
         ['EMP010', 'Maria', 'Rodriguez', 'maria.rodriguez@company.com', '+36 30 012 3456', 'Human Resources', 'Recruiter', '2023-07-08', 'full-time', 60000, '471 Talent Street, Budapest', 'active']
     ];
     for (const e of employees) {
-        db.run('INSERT INTO employees (employeeId, firstName, lastName, email, phone, department, position, joinDate, employmentType, salary, address, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', e);
+        await sql`INSERT INTO employees (employee_id, first_name, last_name, email, phone, department, position, join_date, employment_type, salary, address, status) VALUES (${e[0]}, ${e[1]}, ${e[2]}, ${e[3]}, ${e[4]}, ${e[5]}, ${e[6]}, ${e[7]}, ${e[8]}, ${e[9]}, ${e[10]}, ${e[11]})`;
     }
 
     // Seed Attendance
@@ -208,7 +141,7 @@ function seedDataIfEmpty() {
         ['EMP006', 'Lisa Chen', 'Operations', '08:55', '17:55', 9, 'present', '2026-09-25']
     ];
     for (const a of attendance) {
-        db.run('INSERT INTO attendance (employeeId, name, department, checkIn, checkOut, hoursWorked, status, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', a);
+        await sql`INSERT INTO attendance (employee_id, name, department, check_in, check_out, hours_worked, status, date) VALUES (${a[0]}, ${a[1]}, ${a[2]}, ${a[3]}, ${a[4]}, ${a[5]}, ${a[6]}, ${a[7]})`;
     }
 
     // Seed Performance
@@ -220,7 +153,7 @@ function seedDataIfEmpty() {
         ['EMP006', 'Lisa Chen', 'Operations', 90, 'Excellent', 'Q3 2026', 'Improved operational efficiency significantly']
     ];
     for (const p of performance) {
-        db.run('INSERT INTO performance (employeeId, name, department, score, rating, period, review) VALUES (?, ?, ?, ?, ?, ?, ?)', p);
+        await sql`INSERT INTO performance (employee_id, name, department, score, rating, period, review) VALUES (${p[0]}, ${p[1]}, ${p[2]}, ${p[3]}, ${p[4]}, ${p[5]}, ${p[6]})`;
     }
 
     // Seed Payroll
@@ -233,7 +166,7 @@ function seedDataIfEmpty() {
         ['EMP006', 'Lisa Chen', 'Operations', 90000, 14000, 11000, 93000, 'paid', 'September 2026']
     ];
     for (const p of payroll) {
-        db.run('INSERT INTO payroll (employeeId, name, department, basicSalary, allowances, deductions, netSalary, status, month) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p);
+        await sql`INSERT INTO payroll (employee_id, name, department, basic_salary, allowances, deductions, net_salary, status, month) VALUES (${p[0]}, ${p[1]}, ${p[2]}, ${p[3]}, ${p[4]}, ${p[5]}, ${p[6]}, ${p[7]}, ${p[8]})`;
     }
 
     // Seed Leave Requests
@@ -246,19 +179,65 @@ function seedDataIfEmpty() {
         ['Lisa Chen', 'EMP006', 'maternity', '2026-12-01', '2027-03-01', 90, 'Maternity leave', 'approved']
     ];
     for (const l of leaveRequests) {
-        db.run('INSERT INTO leave_requests (employee, employeeId, type, fromDate, toDate, days, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', l);
+        await sql`INSERT INTO leave_requests (employee, employee_id, type, from_date, to_date, days, reason, status) VALUES (${l[0]}, ${l[1]}, ${l[2]}, ${l[3]}, ${l[4]}, ${l[5]}, ${l[6]}, ${l[7]})`;
     }
 
-    console.log('Database seeded with sample data.');
+    console.log('Database seeded successfully.');
 }
 
-function closeDatabase() {
-    if (db) {
-        saveDatabase();
-        db.close();
-        db = null;
-        dbReady = null;
+// ==================== Row Mapper ====================
+// Maps snake_case DB columns to camelCase for the frontend API
+function mapRow(row, mapping) {
+    const mapped = {};
+    for (const [dbCol, apiKey] of Object.entries(mapping)) {
+        if (row[dbCol] !== undefined) {
+            mapped[apiKey] = row[dbCol];
+        }
     }
+    return mapped;
 }
 
-module.exports = { getDbReadyPromise, getDatabase, queryAll, queryOne, runSql, saveDatabase, closeDatabase };
+const employeeMap = {
+    id: 'id', employee_id: 'employeeId', first_name: 'firstName', last_name: 'lastName',
+    email: 'email', phone: 'phone', department: 'department', position: 'position',
+    join_date: 'joinDate', employment_type: 'employmentType', salary: 'salary',
+    address: 'address', status: 'status'
+};
+
+const departmentMap = {
+    id: 'id', name: 'name', code: 'code', head: 'head',
+    employees: 'employees', budget: 'budget', description: 'description'
+};
+
+const attendanceMap = {
+    id: 'id', employee_id: 'employeeId', name: 'name', department: 'department',
+    check_in: 'checkIn', check_out: 'checkOut', hours_worked: 'hoursWorked',
+    status: 'status', date: 'date'
+};
+
+const performanceMap = {
+    id: 'id', employee_id: 'employeeId', name: 'name', department: 'department',
+    score: 'score', rating: 'rating', period: 'period', review: 'review'
+};
+
+const payrollMap = {
+    id: 'id', employee_id: 'employeeId', name: 'name', department: 'department',
+    basic_salary: 'basicSalary', allowances: 'allowances', deductions: 'deductions',
+    net_salary: 'netSalary', status: 'status', month: 'month'
+};
+
+const leaveMap = {
+    id: 'id', employee: 'employee', employee_id: 'employeeId', type: 'type',
+    from_date: 'fromDate', to_date: 'toDate', days: 'days',
+    reason: 'reason', status: 'status'
+};
+
+function mapRows(rows, mapping) {
+    return rows.map(r => mapRow(r, mapping));
+}
+
+module.exports = {
+    initializeTables, seedDataIfEmpty,
+    mapRow, mapRows,
+    employeeMap, departmentMap, attendanceMap, performanceMap, payrollMap, leaveMap
+};
