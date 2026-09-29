@@ -1,5 +1,4 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 import { getDatabase, ref, get, set, push, update, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
 const firebaseConfig = {
@@ -13,7 +12,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getDatabase(app);
 
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
@@ -25,7 +23,8 @@ const state = {
     performance: [],
     payroll: [],
     leave: [],
-    schedule: [],
+    schedule: {},
+    masterEmployees: [],
     currentUser: {
         id: null,
         name: 'User',
@@ -70,24 +69,27 @@ async function api(endpoint, method = 'GET', body = null) {
 
 // ==================== Initialization ====================
 document.addEventListener('DOMContentLoaded', function() {
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            document.getElementById('currentUserEmail').textContent = user.email;
-            
-            // Assign role: if email contains admin, make them admin
-            const role = user.email.includes('admin') ? 'admin' : 'employee';
-            document.body.className = `role-${role}`;
-            state.currentUser.role = role;
-            
-            initializeData();
-            setupEventListeners();
-        } else {
-            window.location.href = '/login.html';
-        }
-    });
+    // Custom Auth using localStorage
+    const storedUser = localStorage.getItem('duna_user');
+    
+    if (storedUser) {
+        const user = JSON.parse(storedUser);
+        document.getElementById('currentUserEmail').textContent = user.username;
+        
+        const role = user.role === 'ADMIN' ? 'admin' : 'employee';
+        document.body.className = `role-${role}`;
+        state.currentUser.name = user.username;
+        state.currentUser.role = role;
+        
+        initializeData();
+        setupEventListeners();
+    } else {
+        window.location.href = '/login.html';
+    }
 
     document.getElementById('logoutBtn').addEventListener('click', () => {
-        signOut(auth);
+        localStorage.removeItem('duna_user');
+        window.location.href = '/login.html';
     });
 });
 
@@ -137,7 +139,10 @@ async function fetchSchedule() {
         const response = await fetch(GOOGLE_SCRIPT_URL);
         const data = await response.json();
         
-        state.schedule = data.data || data || [];
+        state.schedule = data.schedule || {};
+        state.masterEmployees = data.employees || [];
+        state.employeeLocations = data.employeeLocations || {};
+        
         renderSchedule();
     } catch (err) {
         console.error('Failed to fetch schedule', err);
@@ -150,21 +155,53 @@ function renderSchedule() {
     document.getElementById('scheduleTable').style.display = 'table';
     
     const tbody = document.getElementById('scheduleBody');
-    if (!state.schedule.length) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No schedule data available</td></tr>';
+    const theadRow = document.getElementById('scheduleHead').querySelector('tr');
+    
+    const selMonth = document.getElementById('schedMonth').value; // e.g. OCT
+    const selYear = document.getElementById('schedYear').value;   // e.g. 2026
+    
+    // Generate days 1 to 31
+    let headersHTML = '<th style="position: sticky; left: 0; background: #f8fafc; z-index: 2; width: 150px; text-align: left;">EMPLOYEE NAME</th>';
+    for (let i = 1; i <= 31; i++) headersHTML += `<th style="text-align: center;">${i}</th>`;
+    headersHTML += '<th style="text-align: center; width: 80px;">TOTAL HOURS</th>';
+    theadRow.innerHTML = headersHTML;
+    
+    const employees = Object.keys(state.schedule);
+    if (!employees.length) {
+        tbody.innerHTML = '<tr><td colspan="33" style="text-align: center;">No schedule data available</td></tr>';
         return;
     }
     
-    // Assuming schedule is an array of arrays [["Employee", "Mon", "Tue"...], ["John", "9-5", ...]]
-    // or array of objects. We'll handle array of objects if it is JSON
-    const headers = Object.keys(state.schedule[0] || {});
-    
-    tbody.innerHTML = state.schedule.map(row => {
-        if (Array.isArray(row)) {
-            return `<tr>${row.map(cell => `<td>${cell || '-'}</td>`).join('')}</tr>`;
-        } else {
-            return `<tr>${headers.map(h => `<td>${row[h] || '-'}</td>`).join('')}</tr>`;
+    tbody.innerHTML = employees.map(empName => {
+        let totalHrs = 0;
+        let daysHtml = '';
+        const empSchedule = state.schedule[empName]?.[selYear]?.[selMonth] || {};
+        
+        for (let i = 1; i <= 31; i++) {
+            const dayData = empSchedule[i];
+            if (dayData && dayData.area) {
+                // e.g. "SK/SDI" or "FA 2 (N)"
+                const label = dayData.area;
+                let colorClass = 'bg-yellow-200 text-yellow-800'; 
+                if (label.includes('FA')) colorClass = 'bg-blue-200 text-blue-800';
+                else if (label.includes('P2')) colorClass = 'bg-green-200 text-green-800';
+                else if (label.includes('AD')) colorClass = 'bg-orange-200 text-orange-800';
+                else colorClass = 'bg-indigo-200 text-indigo-800';
+                
+                daysHtml += `<td style="padding: 2px;"><div style="font-size: 10px; font-weight: bold; border-radius: 4px; padding: 4px; text-align: center; white-space: nowrap;" class="${colorClass}">${label}</div></td>`;
+                totalHrs += 8; // dummy calculation
+            } else {
+                daysHtml += '<td></td>';
+            }
         }
+        
+        return `
+            <tr>
+                <td style="position: sticky; left: 0; background: white; z-index: 1; font-weight: 500; text-transform: uppercase;">${empName}</td>
+                ${daysHtml}
+                <td style="text-align: center; font-weight: bold;">${totalHrs || '-'}</td>
+            </tr>
+        `;
     }).join('');
 }
 
@@ -247,6 +284,11 @@ function setupEventListeners() {
             fetchSchedule();
         });
     }
+
+    const schedMonth = document.getElementById('schedMonth');
+    const schedYear = document.getElementById('schedYear');
+    if (schedMonth) schedMonth.addEventListener('change', renderSchedule);
+    if (schedYear) schedYear.addEventListener('change', renderSchedule);
 
     // Company Settings Form
     document.getElementById('companySettingsForm').addEventListener('submit', function(e) {

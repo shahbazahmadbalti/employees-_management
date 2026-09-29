@@ -419,26 +419,41 @@
 
             <!-- Schedule Section -->
             <section id="schedule" class="content-section">
-                <div class="section-header">
-                    <h2>Weekly Schedule</h2>
-                    <button class="btn btn-primary" id="refreshScheduleBtn">
-                        <i class="fas fa-sync"></i> Refresh from Sheets
+                <div class="section-header" style="display: flex; gap: 15px; align-items: center; background: #0f172a; padding: 15px; color: white; border-radius: 8px;">
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span style="font-weight: bold;"><i class="fas fa-cube"></i> Duna Hub</span>
+                        <select id="schedMonth" style="background: #1e293b; color: white; border: 1px solid #334155; padding: 5px; border-radius: 4px;">
+                            <option value="JAN">January</option><option value="FEB">February</option>
+                            <option value="MAR">March</option><option value="APR">April</option>
+                            <option value="MAY">May</option><option value="JUN">June</option>
+                            <option value="JUL">July</option><option value="AUG">August</option>
+                            <option value="SEP">September</option><option value="OCT">October</option>
+                            <option value="NOV">November</option><option value="DEC">December</option>
+                        </select>
+                        <select id="schedYear" style="background: #1e293b; color: white; border: 1px solid #334155; padding: 5px; border-radius: 4px;">
+                            <option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span>LOCATION</span>
+                        <select id="schedLocation" style="background: #1e293b; color: white; border: 1px solid #334155; padding: 5px; border-radius: 4px;"><option value="All">All</option></select>
+                        <span>EMPLOYEE</span>
+                        <select id="schedEmployee" style="background: #1e293b; color: white; border: 1px solid #334155; padding: 5px; border-radius: 4px;"><option value="All">All</option></select>
+                    </div>
+                    <button class="btn btn-primary" id="refreshScheduleBtn" style="margin-left: auto;">
+                        <i class="fas fa-sync"></i> Live Sync Active
                     </button>
                 </div>
-                <div class="card">
-                    <div class="card-body">
-                        <div id="scheduleLoading" style="text-align: center; padding: 20px; color: #6b7280;">Loading schedule...</div>
-                        <table class="data-table" id="scheduleTable" style="display: none;">
+                
+                <div class="card" style="overflow-x: auto; margin-top: 15px;">
+                    <div class="card-body" style="padding: 0;">
+                        <div id="scheduleLoading" style="text-align: center; padding: 20px; color: #6b7280;">Loading schedule data from Google Sheets...</div>
+                        <table class="data-table schedule-grid" id="scheduleTable" style="display: none; min-width: 1500px; font-size: 11px;">
                             <thead id="scheduleHead">
-                                <tr>
-                                    <th>Employee</th>
-                                    <th>Mon</th>
-                                    <th>Tue</th>
-                                    <th>Wed</th>
-                                    <th>Thu</th>
-                                    <th>Fri</th>
-                                    <th>Sat</th>
-                                    <th>Sun</th>
+                                <tr style="background: #f8fafc;">
+                                    <th style="position: sticky; left: 0; background: #f8fafc; z-index: 2; width: 150px; text-align: left;">EMPLOYEE NAME</th>
+                                    <!-- Days 1-31 will be injected here -->
+                                    <th style="text-align: center; width: 80px;">TOTAL HOURS</th>
                                 </tr>
                             </thead>
                             <tbody id="scheduleBody"></tbody>

@@ -9,9 +9,6 @@
     "db:init": "node scripts/init-db.js"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.10.0",
-    "cors": "^2.8.5",
-    "express": "^4.21.0",
     "firebase": "^12.19.0",
     "firebase-admin": "^14.5.0",
     "node-fetch": "^3.3.2"
