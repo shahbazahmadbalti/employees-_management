@@ -19,28 +19,31 @@
                     <li class="active" data-section="dashboard">
                         <a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     </li>
-                    <li data-section="employees">
+                    <li data-section="schedule">
+                        <a href="#"><i class="fas fa-calendar-alt"></i> Schedule</a>
+                    </li>
+                    <li data-section="employees" class="admin-only">
                         <a href="#"><i class="fas fa-user-tie"></i> Employees</a>
                     </li>
-                    <li data-section="departments">
+                    <li data-section="departments" class="admin-only">
                         <a href="#"><i class="fas fa-building"></i> Departments</a>
                     </li>
                     <li data-section="attendance">
                         <a href="#"><i class="fas fa-calendar-check"></i> Attendance</a>
                     </li>
-                    <li data-section="performance">
+                    <li data-section="performance" class="admin-only">
                         <a href="#"><i class="fas fa-chart-line"></i> Performance</a>
                     </li>
-                    <li data-section="payroll">
+                    <li data-section="payroll" class="admin-only">
                         <a href="#"><i class="fas fa-money-bill-wave"></i> Payroll</a>
                     </li>
                     <li data-section="leave">
                         <a href="#"><i class="fas fa-plane-departure"></i> Leave Management</a>
                     </li>
-                    <li data-section="reports">
+                    <li data-section="reports" class="admin-only">
                         <a href="#"><i class="fas fa-file-alt"></i> Reports</a>
                     </li>
-                    <li data-section="settings">
+                    <li data-section="settings" class="admin-only">
                         <a href="#"><i class="fas fa-cog"></i> Settings</a>
                     </li>
                 </ul>
@@ -67,9 +70,11 @@
                         <span class="badge">3</span>
                     </div>
                     <div class="user-profile">
-                        <img src="https://ui-avatars.com/api/?name=Admin+User&background=4F46E5&color=fff" alt="Admin">
-                        <span>Admin User</span>
-                        <i class="fas fa-chevron-down"></i>
+                        <img src="https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff" alt="User" id="headerAvatar">
+                        <span id="currentUserEmail">Loading...</span>
+                        <button id="logoutBtn" style="margin-left: 10px; background: none; border: none; cursor: pointer; color: #ef4444;" title="Logout">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </button>
                     </div>
                 </div>
             </header>
@@ -407,6 +412,36 @@
                                 </tr>
                             </thead>
                             <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Schedule Section -->
+            <section id="schedule" class="content-section">
+                <div class="section-header">
+                    <h2>Weekly Schedule</h2>
+                    <button class="btn btn-primary" id="refreshScheduleBtn">
+                        <i class="fas fa-sync"></i> Refresh from Sheets
+                    </button>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <div id="scheduleLoading" style="text-align: center; padding: 20px; color: #6b7280;">Loading schedule...</div>
+                        <table class="data-table" id="scheduleTable" style="display: none;">
+                            <thead id="scheduleHead">
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Mon</th>
+                                    <th>Tue</th>
+                                    <th>Wed</th>
+                                    <th>Thu</th>
+                                    <th>Fri</th>
+                                    <th>Sat</th>
+                                    <th>Sun</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scheduleBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -827,6 +862,6 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>

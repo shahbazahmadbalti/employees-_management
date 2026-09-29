@@ -1355,3 +1355,12 @@ input:checked + .slider:before {
 .toast-close:hover {
     color: var(--gray-600);
 }
+/* Role-based display */
+.admin-only { display: none !important; }
+body.role-admin .admin-only { display: block !important; }
+body.role-admin tr.admin-only { display: table-row !important; }
+body.role-admin td.admin-only, body.role-admin th.admin-only { display: table-cell !important; }
+body.role-admin li.admin-only { display: list-item !important; }
+body.role-admin button.admin-only { display: inline-block !important; }
+.employee-only { display: none !important; }
+body.role-employee .employee-only { display: block !important; }

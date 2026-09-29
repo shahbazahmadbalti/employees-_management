@@ -1,7 +1,23 @@
-// Employee Management System - Main JavaScript
-// Now uses REST API with SQLite database backend
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getDatabase, ref, get, set, push, update, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
-// ==================== State Management ====================
+const firebaseConfig = {
+    apiKey: "AIzaSyBFUcSv1olo8r-dglXvij5Sz4aHAgLWBBA",
+    authDomain: "new-dashboard-d8b3a.firebaseapp.com",
+    databaseURL: "https://new-dashboard-d8b3a-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "new-dashboard-d8b3a",
+    storageBucket: "new-dashboard-d8b3a.firebasestorage.app",
+    messagingSenderId: "58505489089",
+    appId: "1:58505489089:web:bdb7dd49ac84b49c820240"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
+
 const state = {
     employees: [],
     departments: [],
@@ -9,35 +25,70 @@ const state = {
     performance: [],
     payroll: [],
     leave: [],
+    schedule: [],
     currentUser: {
-        id: 1,
-        name: 'Admin User',
-        role: 'Administrator'
+        id: null,
+        name: 'User',
+        role: 'employee'
     }
 };
 
-const API_BASE = '/api';
-
-// ==================== API Helper ====================
+// ==================== Firebase API Wrapper ====================
 async function api(endpoint, method = 'GET', body = null) {
-    const options = {
-        method,
-        headers: { 'Content-Type': 'application/json' }
-    };
-    if (body) options.body = JSON.stringify(body);
-
-    const response = await fetch(`${API_BASE}${endpoint}`, options);
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(err.error || 'Request failed');
+    let [path, query] = endpoint.split('?');
+    const pathParts = path.split('/').filter(Boolean);
+    const collection = pathParts[0];
+    const id = pathParts[1];
+    
+    const dbRef = ref(db);
+    
+    if (method === 'GET') {
+        if (id) {
+            const snapshot = await get(child(dbRef, `${collection}/${id}`));
+            if (!snapshot.exists()) throw new Error('Not found');
+            return { id, ...snapshot.val() };
+        } else {
+            const snapshot = await get(child(dbRef, collection));
+            if (!snapshot.exists()) return [];
+            const data = snapshot.val();
+            return Object.keys(data).map(key => ({ id: key, ...data[key] }));
+        }
+    } else if (method === 'POST') {
+        const newRef = push(child(dbRef, collection));
+        await set(newRef, body);
+        return { id: newRef.key, ...body };
+    } else if (method === 'PUT') {
+        const itemRef = child(dbRef, `${collection}/${id}`);
+        await update(itemRef, body);
+        return { id, ...body };
+    } else if (method === 'DELETE') {
+        const itemRef = child(dbRef, `${collection}/${id}`);
+        await remove(itemRef);
+        return { success: true };
     }
-    return response.json();
 }
 
 // ==================== Initialization ====================
 document.addEventListener('DOMContentLoaded', function() {
-    initializeData();
-    setupEventListeners();
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            document.getElementById('currentUserEmail').textContent = user.email;
+            
+            // Assign role: if email contains admin, make them admin
+            const role = user.email.includes('admin') ? 'admin' : 'employee';
+            document.body.className = `role-${role}`;
+            state.currentUser.role = role;
+            
+            initializeData();
+            setupEventListeners();
+        } else {
+            window.location.href = '/login.html';
+        }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        signOut(auth);
+    });
 });
 
 async function initializeData() {
@@ -58,18 +109,63 @@ async function initializeData() {
         state.payroll = payroll;
         state.leave = leave;
 
-        renderDashboard();
-        renderEmployees();
-        renderDepartments();
+        // Render based on role
+        if (state.currentUser.role === 'admin') {
+            renderDashboard();
+            renderEmployees();
+            renderDepartments();
+            renderPerformance();
+            renderPayroll();
+            updateDropdowns();
+        }
+        
         renderAttendance();
-        renderPerformance();
-        renderPayroll();
         renderLeave();
-        updateDropdowns();
+        fetchSchedule();
+        
     } catch (err) {
         console.error('Failed to load data:', err);
         showToast('Failed to load data from server', 'error');
     }
+}
+
+async function fetchSchedule() {
+    try {
+        document.getElementById('scheduleLoading').style.display = 'block';
+        document.getElementById('scheduleTable').style.display = 'none';
+        
+        const response = await fetch(GOOGLE_SCRIPT_URL);
+        const data = await response.json();
+        
+        state.schedule = data.data || data || [];
+        renderSchedule();
+    } catch (err) {
+        console.error('Failed to fetch schedule', err);
+        document.getElementById('scheduleLoading').textContent = 'Failed to load schedule';
+    }
+}
+
+function renderSchedule() {
+    document.getElementById('scheduleLoading').style.display = 'none';
+    document.getElementById('scheduleTable').style.display = 'table';
+    
+    const tbody = document.getElementById('scheduleBody');
+    if (!state.schedule.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center;">No schedule data available</td></tr>';
+        return;
+    }
+    
+    // Assuming schedule is an array of arrays [["Employee", "Mon", "Tue"...], ["John", "9-5", ...]]
+    // or array of objects. We'll handle array of objects if it is JSON
+    const headers = Object.keys(state.schedule[0] || {});
+    
+    tbody.innerHTML = state.schedule.map(row => {
+        if (Array.isArray(row)) {
+            return `<tr>${row.map(cell => `<td>${cell || '-'}</td>`).join('')}</tr>`;
+        } else {
+            return `<tr>${headers.map(h => `<td>${row[h] || '-'}</td>`).join('')}</tr>`;
+        }
+    }).join('');
 }
 
 // ==================== Event Listeners ====================
@@ -143,6 +239,14 @@ function setupEventListeners() {
     document.getElementById('requestLeaveBtn').addEventListener('click', function() {
         showToast('Leave request form opened', 'success');
     });
+
+    // Refresh Schedule Button
+    const refreshScheduleBtn = document.getElementById('refreshScheduleBtn');
+    if (refreshScheduleBtn) {
+        refreshScheduleBtn.addEventListener('click', function() {
+            fetchSchedule();
+        });
+    }
 
     // Company Settings Form
     document.getElementById('companySettingsForm').addEventListener('submit', function(e) {
@@ -349,7 +453,7 @@ async function deleteEmployee(id) {
     if (confirm('Are you sure you want to delete this employee?')) {
         try {
             await api(`/employees/${id}`, 'DELETE');
-            state.employees = state.employees.filter(e => e.id !== id);
+            state.employees = state.employees.filter(e => e.id != id);
             renderEmployees();
             renderDashboard();
             showToast('Employee deleted successfully!', 'success');
@@ -381,7 +485,7 @@ async function saveEmployee() {
     try {
         if (editId) {
             const updated = await api(`/employees/${editId}`, 'PUT', employeeData);
-            const index = state.employees.findIndex(e => e.id === parseInt(editId));
+            const index = state.employees.findIndex(e => e.id == editId);
             if (index !== -1) state.employees[index] = updated;
             showToast('Employee updated successfully!', 'success');
         } else {
@@ -447,7 +551,7 @@ async function deleteDepartment(id) {
     if (confirm('Are you sure you want to delete this department?')) {
         try {
             await api(`/departments/${id}`, 'DELETE');
-            state.departments = state.departments.filter(d => d.id !== id);
+            state.departments = state.departments.filter(d => d.id != id);
             renderDepartments();
             renderDashboard();
             updateDropdowns();
@@ -474,7 +578,7 @@ async function saveDepartment() {
     try {
         if (editId) {
             const updated = await api(`/departments/${editId}`, 'PUT', departmentData);
-            const index = state.departments.findIndex(d => d.id === parseInt(editId));
+            const index = state.departments.findIndex(d => d.id == editId);
             if (index !== -1) state.departments[index] = updated;
             showToast('Department updated successfully!', 'success');
         } else {
@@ -530,7 +634,7 @@ async function markAttendance(employeeId, id) {
             hoursWorked: 9,
             status: 'present'
         });
-        const index = state.attendance.findIndex(a => a.id === id);
+        const index = state.attendance.findIndex(a => a.id == id);
         if (index !== -1) state.attendance[index] = updated;
         renderAttendance();
         showToast('Attendance marked!', 'success');
@@ -602,7 +706,7 @@ function viewPayslip(employeeId) {
 async function processPayment(employeeId, id) {
     try {
         const updated = await api(`/payroll/${id}`, 'PUT', { status: 'paid' });
-        const index = state.payroll.findIndex(p => p.id === id);
+        const index = state.payroll.findIndex(p => p.id == id);
         if (index !== -1) state.payroll[index] = updated;
         renderPayroll();
         showToast('Payment processed successfully!', 'success');
@@ -644,7 +748,7 @@ function renderLeave() {
 async function approveLeave(id) {
     try {
         const updated = await api(`/leave/${id}`, 'PUT', { status: 'approved' });
-        const index = state.leave.findIndex(l => l.id === id);
+        const index = state.leave.findIndex(l => l.id == id);
         if (index !== -1) state.leave[index] = updated;
         renderLeave();
         showToast('Leave request approved!', 'success');
@@ -656,7 +760,7 @@ async function approveLeave(id) {
 async function rejectLeave(id) {
     try {
         const updated = await api(`/leave/${id}`, 'PUT', { status: 'rejected' });
-        const index = state.leave.findIndex(l => l.id === id);
+        const index = state.leave.findIndex(l => l.id == id);
         if (index !== -1) state.leave[index] = updated;
         renderLeave();
         showToast('Leave request rejected', 'success');
