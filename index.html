@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4F46E5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <title>Employee Management System</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
@@ -20,13 +25,16 @@
                     <li class="active admin-only" data-section="dashboard"><a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
                     <li data-section="myday"><a href="#"><i class="fas fa-stopwatch"></i> My Day</a></li>
                     <li data-section="schedule"><a href="#"><i class="fas fa-calendar-alt"></i> Schedule</a></li>
+                    <li data-section="messages"><a href="#"><i class="fas fa-comments"></i> Messages <span class="nav-badge" id="navChatBadge" style="display:none"></span></a></li>
+                    <li data-section="notices" class="soon" data-feature="notices"><a href="#"><i class="fas fa-bullhorn"></i> Notices <span class="nav-badge" id="navNoticeBadge" style="display:none"></span></a></li>
                     <li data-section="employees" class="admin-only"><a href="#"><i class="fas fa-user-tie"></i> Employees</a></li>
                     <li data-section="departments" class="admin-only"><a href="#"><i class="fas fa-building"></i> Departments</a></li>
-                    <li data-section="attendance" class="admin-only"><a href="#"><i class="fas fa-calendar-check"></i> Attendance</a></li>
+                    <li data-section="attendance" class="manager-only"><a href="#"><i class="fas fa-calendar-check"></i> Attendance</a></li>
                     <li data-section="performance" class="admin-only"><a href="#"><i class="fas fa-chart-line"></i> Performance</a></li>
                     <li data-section="payroll" class="admin-only"><a href="#"><i class="fas fa-money-bill-wave"></i> Payroll</a></li>
                     <li data-section="leave"><a href="#"><i class="fas fa-plane-departure"></i> Leave Management</a></li>
                     <li data-section="reports" class="admin-only"><a href="#"><i class="fas fa-file-alt"></i> Reports</a></li>
+                    <li data-section="audit" class="admin-only soon" data-feature="audit"><a href="#"><i class="fas fa-clipboard-list"></i> Audit Log</a></li>
                     <li data-section="settings" class="admin-only"><a href="#"><i class="fas fa-cog"></i> Settings</a></li>
                 </ul>
             </nav>
@@ -51,7 +59,10 @@
                     <div class="user-profile">
                         <img src="https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff" alt="User" id="headerAvatar">
                         <span id="currentUserEmail">Loading...</span>
-                        <button id="changePasswordBtn" title="Change password" style="margin-left: 10px; background: none; border: none; cursor: pointer; color: #4F46E5;">
+                        <button id="prefsBtn" class="soon" data-feature="prefs" title="Preferences" style="margin-left: 6px; background: none; border: none; cursor: pointer; color: #6B7280;">
+                            <i class="fas fa-sliders"></i>
+                        </button>
+                        <button id="changePasswordBtn" title="Change password" style="margin-left: 6px; background: none; border: none; cursor: pointer; color: #4F46E5;">
                             <i class="fas fa-key"></i>
                         </button>
                         <button id="logoutBtn" style="margin-left: 4px; background: none; border: none; cursor: pointer; color: #ef4444;" title="Logout">
@@ -157,6 +168,53 @@
                 <div class="card" style="margin-top: 1.25rem;"><div class="card-body" id="myDayNotes"></div></div>
             </section>
 
+            <!-- Messages (everyone) -->
+            <section id="messages" class="content-section">
+                <div class="chat-shell" id="chatShell">
+                    <aside class="chat-list-pane">
+                        <div class="chat-list-head">
+                            <h3>Chats</h3>
+                            <div class="chat-list-actions">
+                                <button class="btn btn-primary" id="newChatBtn"><i class="fas fa-pen"></i> New</button>
+                                <button class="btn btn-outline" id="newGroupBtn"><i class="fas fa-users"></i> Group</button>
+                            </div>
+                        </div>
+                        <input type="text" class="form-control" id="chatSearch" placeholder="Search chats...">
+                        <div id="chatList" class="chat-list"></div>
+                    </aside>
+                    <section class="chat-room-pane">
+                        <div class="chat-empty" id="chatEmpty"><i class="fas fa-comments"></i><p>Select a chat or start a new one</p></div>
+                        <div class="chat-room" id="chatRoom" style="display:none">
+                            <div class="chat-room-head">
+                                <button class="btn-icon chat-back" id="chatBack" title="Back"><i class="fas fa-arrow-left"></i></button>
+                                <div class="chat-room-title"><strong id="chatRoomTitle"></strong><small id="chatRoomSub"></small></div>
+                                <button class="btn-icon" id="chatDeleteBtn" title="Delete group" style="display:none"><i class="fas fa-trash"></i></button>
+                            </div>
+                            <div id="chatMessages" class="chat-messages"></div>
+                            <form id="chatForm" class="chat-compose">
+                                <textarea id="chatInput" rows="1" placeholder="Type a message..."></textarea>
+                                <button class="btn btn-primary" type="submit" title="Send"><i class="fas fa-paper-plane"></i></button>
+                            </form>
+                        </div>
+                    </section>
+                </div>
+            </section>
+
+            <!-- Notices (everyone reads; managers post) -->
+            <section id="notices" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <select id="noticeFilter">
+                            <option value="">All notices</option>
+                            <option value="unread">Unread</option>
+                            <option value="pinned">Pinned</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary manager-only" id="newNoticeBtn"><i class="fas fa-bullhorn"></i> New notice</button>
+                </div>
+                <div id="noticeList" class="notice-list"></div>
+            </section>
+
             <!-- Employees (admin) -->
             <section id="employees" class="content-section">
                 <div class="section-header">
@@ -197,7 +255,7 @@
                 <div class="departments-grid" id="departmentsGrid"></div>
             </section>
 
-            <!-- Attendance (admin day view) -->
+            <!-- Attendance (admin / leaders: day view) -->
             <section id="attendance" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
@@ -252,12 +310,11 @@
             <section id="payroll" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
-                        <select id="payrollMonth">
-                            <option value="9-2026">September 2026</option>
-                            <option value="8-2026">August 2026</option>
-                            <option value="7-2026">July 2026</option>
-                        </select>
+                        <select id="payrollMonth"></select>
                         <select id="payrollDepartment"><option value="">All Departments</option></select>
+                        <label class="inline-check soon" data-feature="payroll-hours">
+                            <input type="checkbox" id="payrollUseHours"> Use attendance hours
+                        </label>
                     </div>
                     <button class="btn btn-primary" id="generatePayrollBtn"><i class="fas fa-file-invoice-dollar"></i> Generate Payroll</button>
                 </div>
@@ -374,10 +431,16 @@
 
             <!-- Reports (admin) -->
             <section id="reports" class="content-section">
+                <div class="section-header soon" data-feature="reports-month">
+                    <div class="filter-group">
+                        <label style="font-weight:600; color: var(--gray-600);">Month</label>
+                        <input type="month" id="reportMonth">
+                    </div>
+                </div>
                 <div class="reports-grid">
                     <div class="report-card" onclick="generateReport('attendance')">
                         <div class="report-icon"><i class="fas fa-calendar-check"></i></div>
-                        <h3>Attendance Report</h3><p>This month's check-ins, breaks and worked hours</p>
+                        <h3>Attendance Report</h3><p>Check-ins, breaks and worked hours</p>
                     </div>
                     <div class="report-card" onclick="generateReport('performance')">
                         <div class="report-icon"><i class="fas fa-chart-line"></i></div>
@@ -398,6 +461,25 @@
                     <div class="report-card" onclick="generateReport('employee')">
                         <div class="report-icon"><i class="fas fa-users"></i></div>
                         <h3>Employee Report</h3><p>Complete employee directory and details</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Audit Log (admin) -->
+            <section id="audit" class="content-section">
+                <div class="section-header">
+                    <div class="filter-group">
+                        <input type="date" id="auditDate">
+                        <input type="text" id="auditSearch" class="form-control" placeholder="Search user or action..." style="width: 240px;">
+                    </div>
+                    <button class="btn btn-outline" id="auditMoreBtn"><i class="fas fa-rotate"></i> Load more</button>
+                </div>
+                <div class="card">
+                    <div class="card-body">
+                        <table class="data-table" id="auditTable">
+                            <thead><tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
                     </div>
                 </div>
             </section>
@@ -450,6 +532,28 @@
                                 <tbody></tbody>
                             </table>
                             <p style="margin-top: 1rem; color: #6b7280;">Logins are created from the Employees page: Employee ID + password.</p>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header"><h3><i class="fas fa-comments"></i> Chat Settings</h3></div>
+                        <div class="card-body">
+                            <div class="form-group">
+                                <label>Who can staff message?</label>
+                                <select id="adminChatVisibility" class="form-control">
+                                    <option value="ALL">Everyone</option>
+                                    <option value="GROUP">Own group + management</option>
+                                    <option value="MANAGEMENT">Management only</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Can staff create groups?</label>
+                                <select id="adminChatGroups" class="form-control">
+                                    <option value="true">Yes</option>
+                                    <option value="false">No</option>
+                                </select>
+                            </div>
+                            <button class="btn btn-primary" id="saveChatSettingsBtn">Save chat settings</button>
                         </div>
                     </div>
 
@@ -550,14 +654,22 @@
                             <label>Password</label>
                             <input type="password" name="password" class="form-control" autocomplete="new-password" minlength="6" placeholder="Set a login password">
                             <small id="passwordHint" style="color:#6b7280; display:block; margin-top:4px;"></small>
+                            <button type="button" class="btn btn-outline soon" data-feature="admin-api" id="resetPasswordBtn" style="margin-top:.5rem;">
+                                <i class="fas fa-key"></i> Reset password
+                            </button>
                         </div>
                         <div class="form-group">
                             <label>Role *</label>
                             <select name="role" required class="form-control">
                                 <option value="USER">User (Employee)</option>
+                                <option value="LEADER">Leader (group manager)</option>
                                 <option value="ADMIN">Admin</option>
                             </select>
                         </div>
+                    </div>
+                    <div class="form-group soon" data-feature="leader" id="leaderGroupsRow">
+                        <label>Leader of groups (comma separated)</label>
+                        <input type="text" name="leaderGroups" class="form-control" placeholder="e.g. SK, SDI">
                     </div>
                     <div class="form-row">
                         <div class="form-group"><label>Location / Group</label><input type="text" name="location" class="form-control" value="General"></div>
@@ -646,7 +758,7 @@
         </div>
     </div>
 
-    <!-- Log Modal (admin: view / correct an employee's day + notes) -->
+    <!-- Log Modal (admin / leader: view and correct an employee's day + notes) -->
     <div class="modal" id="logModal">
         <div class="modal-content modal-large">
             <div class="modal-header">
@@ -754,6 +866,122 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('passwordModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary">Update Password</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- New chat / new group (Messages) -->
+    <div class="modal" id="chatPickModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>New chat</h3><button class="modal-close" onclick="closeModal('chatPickModal')">&times;</button></div>
+            <div class="modal-body">
+                <input type="text" class="form-control" id="chatPickSearch" placeholder="Search people..." style="margin-bottom:.75rem">
+                <div id="chatPickList" class="pick-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="groupModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>New group</h3><button class="modal-close" onclick="closeModal('groupModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>Group name *</label><input type="text" class="form-control" id="groupName" maxlength="40"></div>
+                <div class="form-group"><label>Members</label><div id="groupMembers" class="pick-list"></div></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('groupModal')">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="groupCreateBtn">Create group</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notice composer + readers -->
+    <div class="modal" id="noticeModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3 id="noticeModalTitle">New notice</h3><button class="modal-close" onclick="closeModal('noticeModal')">&times;</button></div>
+            <div class="modal-body">
+                <form id="noticeForm">
+                    <div class="form-group"><label>Title *</label><input type="text" name="title" required maxlength="80" class="form-control"></div>
+                    <div class="form-group"><label>Message *</label><textarea name="body" rows="5" required class="form-control"></textarea></div>
+                    <div class="form-group">
+                        <label>Audience</label>
+                        <select name="audience" id="noticeAudience" class="form-control">
+                            <option value="ALL">Everyone</option>
+                            <option value="GROUPS">Selected groups</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="noticeGroupsRow" style="display:none">
+                        <label>Groups</label>
+                        <div id="noticeGroups" class="checkbox-group"></div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group"><label>Expires (optional)</label><input type="date" name="expires" class="form-control"></div>
+                        <div class="form-group"><label>&nbsp;</label><label class="inline-check"><input type="checkbox" name="pinned"> Pin to top</label></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('noticeModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Publish</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="noticeReadersModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>Read receipts</h3><button class="modal-close" onclick="closeModal('noticeReadersModal')">&times;</button></div>
+            <div class="modal-body" id="noticeReadersBody"></div>
+        </div>
+    </div>
+
+    <!-- Preferences (sound, push alerts, install app) -->
+    <div class="modal" id="prefsModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>Preferences</h3><button class="modal-close" onclick="closeModal('prefsModal')">&times;</button></div>
+            <div class="modal-body">
+                <div class="setting-item">
+                    <div class="setting-label"><h4>Message sounds</h4><p>Play a short sound for new messages</p></div>
+                    <label class="switch"><input type="checkbox" id="prefSound" checked><span class="slider"></span></label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label"><h4>Push notifications</h4><p>Alerts for messages, notices and notes</p></div>
+                    <label class="switch"><input type="checkbox" id="prefPush"><span class="slider"></span></label>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label"><h4>Install app</h4><p>Add this portal to your home screen</p></div>
+                    <button class="btn btn-outline" id="prefInstall" style="display:none"><i class="fas fa-download"></i> Install</button>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label"><h4>My profile</h4><p>Phone, address, email and photo</p></div>
+                    <button class="btn btn-outline" id="prefProfile"><i class="fas fa-id-card"></i> Edit</button>
+                </div>
+                <div class="setting-item">
+                    <div class="setting-label"><h4>Password</h4><p>Change your login password</p></div>
+                    <button class="btn btn-outline" id="prefPassword"><i class="fas fa-key"></i> Change</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- My Profile -->
+    <div class="modal" id="profileModal">
+        <div class="modal-content">
+            <div class="modal-header"><h3>My profile</h3><button class="modal-close" onclick="closeModal('profileModal')">&times;</button></div>
+            <div class="modal-body">
+                <form id="profileForm">
+                    <div class="profile-edit-avatar">
+                        <img id="profileAvatarPreview" src="https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff" alt="">
+                        <label class="btn btn-outline" for="profileAvatarFile"><i class="fas fa-camera"></i> Change photo</label>
+                        <input type="file" id="profileAvatarFile" accept="image/*" style="display:none">
+                    </div>
+                    <div class="form-group"><label>Phone</label><input type="tel" name="phone" class="form-control"></div>
+                    <div class="form-group"><label>Email</label><input type="email" name="email" class="form-control"></div>
+                    <div class="form-group"><label>Address</label><textarea name="address" rows="2" class="form-control"></textarea></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('profileModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save profile</button>
                     </div>
                 </form>
             </div>
