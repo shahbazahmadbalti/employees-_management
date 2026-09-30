@@ -19,24 +19,39 @@
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html { -webkit-text-size-adjust: 100%; }
+        html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+
         body {
             font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: linear-gradient(160deg, #f8fbff 0%, #eef3fb 55%, #e9eefb 100%);
             color: var(--ink);
-            min-height: 100vh;
-            min-height: 100dvh;
             line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            height: 100dvh;
         }
 
-        /* ---------- Top bar ---------- */
+        /* ---------- Top bar (fixed row, never scrolls away) ---------- */
         .topbar {
-            position: sticky; top: 0; z-index: 50;
+            flex: 0 0 auto;
+            position: relative; z-index: 50;
             display: flex; align-items: center; justify-content: space-between; gap: 12px;
             padding: 12px max(20px, env(safe-area-inset-left)) 12px max(20px, env(safe-area-inset-right));
-            background: rgba(255, 255, 255, 0.85);
-            -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.97);
             border-bottom: 1px solid rgba(226, 232, 240, 0.8);
         }
+
+        /* ---------- The only scrolling area ---------- */
+        .scroller {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+        }
+
         .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; min-width: 0; }
         .brand-logo { width: 46px; height: 46px; display: grid; place-items: center; flex-shrink: 0; }
         .brand-logo img { width: 100%; height: 100%; object-fit: contain; }
@@ -163,7 +178,7 @@
     </style>
 </head>
 <body>
-    <!-- ===== Header ===== -->
+    <!-- ===== Header (fixed row) ===== -->
     <header class="topbar">
         <a class="brand" href="login.html" aria-label="Duna Networks">
             <span class="brand-logo">
@@ -186,75 +201,78 @@
         </div>
     </header>
 
-    <main class="page">
-        <!-- ===== Intro ===== -->
-        <section class="intro">
-            <div class="pill"><span class="dot"></span><span data-i18n="badge">Duna Networks Employee Portal</span></div>
-            <h1><span data-i18n="hero1">Your workday,</span><span class="highlight" data-i18n="hero2">connected.</span></h1>
-            <p class="desc" data-i18n="desc"></p>
+    <!-- ===== Scrolling content ===== -->
+    <div class="scroller" id="scroller">
+        <main class="page">
+            <!-- Intro -->
+            <section class="intro">
+                <div class="pill"><span class="dot"></span><span data-i18n="badge">Duna Networks Employee Portal</span></div>
+                <h1><span data-i18n="hero1">Your workday,</span><span class="highlight" data-i18n="hero2">connected.</span></h1>
+                <p class="desc" data-i18n="desc"></p>
 
-            <div class="features">
-                <div class="feature-box">
-                    <div class="ic"><i class="far fa-calendar-alt"></i></div>
-                    <div><h3 data-i18n="f1t"></h3><p data-i18n="f1d"></p></div>
-                </div>
-                <div class="feature-box">
-                    <div class="ic"><i class="far fa-comment-dots"></i></div>
-                    <div><h3 data-i18n="f2t"></h3><p data-i18n="f2d"></p></div>
-                </div>
-                <div class="feature-box">
-                    <div class="ic"><i class="fas fa-chart-line"></i></div>
-                    <div><h3 data-i18n="f3t"></h3><p data-i18n="f3d"></p></div>
-                </div>
-            </div>
-            <div class="footer-note"><span class="dot"></span><span data-i18n="protected"></span></div>
-        </section>
-
-        <!-- ===== Login + Roster ===== -->
-        <section class="auth">
-            <div class="login-card">
-                <div class="card-header">
-                    <div class="lock-icon-bg"><i class="fas fa-lock"></i></div>
-                    <div class="sec-title" data-i18n="secure"></div>
-                    <h2 data-i18n="welcome"></h2>
-                    <p data-i18n="sub"></p>
-                </div>
-                <div class="card-body">
-                    <form id="loginForm" autocomplete="on">
-                        <div class="form-group">
-                            <label for="username"><i class="far fa-user"></i><span data-i18n="userLabel"></span></label>
-                            <input type="text" id="username" autocomplete="username" autocapitalize="none" data-i18n-placeholder="userPh" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="password"><i class="fas fa-shield-alt"></i><span data-i18n="passLabel"></span></label>
-                            <input type="password" id="password" autocomplete="current-password" data-i18n-placeholder="passPh" required>
-                        </div>
-                        <button type="submit" class="btn-submit" id="submitBtn"></button>
-                        <p class="error-message" id="errorMessage" role="alert"></p>
-                    </form>
-
-                    <div class="roster-toggle" id="rosterToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="rosterCard">
-                        <span class="label" data-i18n="viewRoster"></span>
-                        <span class="chev"><i class="fas fa-chevron-down"></i></span>
+                <div class="features">
+                    <div class="feature-box">
+                        <div class="ic"><i class="far fa-calendar-alt"></i></div>
+                        <div><h3 data-i18n="f1t"></h3><p data-i18n="f1d"></p></div>
+                    </div>
+                    <div class="feature-box">
+                        <div class="ic"><i class="far fa-comment-dots"></i></div>
+                        <div><h3 data-i18n="f2t"></h3><p data-i18n="f2d"></p></div>
+                    </div>
+                    <div class="feature-box">
+                        <div class="ic"><i class="fas fa-chart-line"></i></div>
+                        <div><h3 data-i18n="f3t"></h3><p data-i18n="f3d"></p></div>
                     </div>
                 </div>
-            </div>
+                <div class="footer-note"><span class="dot"></span><span data-i18n="protected"></span></div>
+            </section>
 
-            <div class="roster-card" id="rosterCard">
-                <div class="roster-nav">
-                    <button type="button" id="prevDay" data-i18n-title="prevDay"><i class="fas fa-chevron-left"></i></button>
-                    <div class="roster-title">
-                        <h3 id="rosterTitle"></h3>
-                        <small id="rosterDate"></small>
+            <!-- Login + Roster -->
+            <section class="auth">
+                <div class="login-card">
+                    <div class="card-header">
+                        <div class="lock-icon-bg"><i class="fas fa-lock"></i></div>
+                        <div class="sec-title" data-i18n="secure"></div>
+                        <h2 data-i18n="welcome"></h2>
+                        <p data-i18n="sub"></p>
                     </div>
-                    <button type="button" id="nextDay" data-i18n-title="nextDay"><i class="fas fa-chevron-right"></i></button>
-                </div>
-                <div id="rosterBody"></div>
-            </div>
-        </section>
-    </main>
+                    <div class="card-body">
+                        <form id="loginForm" autocomplete="on">
+                            <div class="form-group">
+                                <label for="username"><i class="far fa-user"></i><span data-i18n="userLabel"></span></label>
+                                <input type="text" id="username" autocomplete="username" autocapitalize="none" data-i18n-placeholder="userPh" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="password"><i class="fas fa-shield-alt"></i><span data-i18n="passLabel"></span></label>
+                                <input type="password" id="password" autocomplete="current-password" data-i18n-placeholder="passPh" required>
+                            </div>
+                            <button type="submit" class="btn-submit" id="submitBtn"></button>
+                            <p class="error-message" id="errorMessage" role="alert"></p>
+                        </form>
 
-    <footer class="legal" data-i18n="copyright"></footer>
+                        <div class="roster-toggle" id="rosterToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="rosterCard">
+                            <span class="label" data-i18n="viewRoster"></span>
+                            <span class="chev"><i class="fas fa-chevron-down"></i></span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="roster-card" id="rosterCard">
+                    <div class="roster-nav">
+                        <button type="button" id="prevDay" data-i18n-title="prevDay"><i class="fas fa-chevron-left"></i></button>
+                        <div class="roster-title">
+                            <h3 id="rosterTitle"></h3>
+                            <small id="rosterDate"></small>
+                        </div>
+                        <button type="button" id="nextDay" data-i18n-title="nextDay"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div id="rosterBody"></div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="legal" data-i18n="copyright"></footer>
+    </div>
 
     <script>
         // ====================== Config ======================
@@ -615,6 +633,18 @@
                 $('submitBtn').disabled = false;
                 setSubmitLabel();
             }
+        });
+
+        // ====================== iOS keyboard / scroll fix ======================
+        // After the keyboard closes, snap the viewport back so nothing stays shifted.
+        document.querySelectorAll('input').forEach(input => {
+            input.addEventListener('blur', () => {
+                setTimeout(() => {
+                    window.scrollTo(0, 0);
+                    document.documentElement.scrollTop = 0;
+                    document.body.scrollTop = 0;
+                }, 80);
+            });
         });
 
         // ====================== Start ======================
