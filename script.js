@@ -1,5 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getDatabase, ref, get, set, push, update, remove, child } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+import {
+    getAuth, onAuthStateChanged, signOut, createUserWithEmailAndPassword,
+    EmailAuthProvider, reauthenticateWithCredential, updatePassword
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyBFUcSv1olo8r-dglXvij5Sz4aHAgLWBBA",
@@ -13,10 +17,13 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
+const auth = getAuth(app);
 
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
 
 // ==================== Config ====================
+const AUTH_EMAIL_DOMAIN = 'employees.duna-networks.app';   // must match login.html
+const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const CURRENCY = 'USD';
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
@@ -45,7 +52,7 @@ const state = {
     schedule: {},
     masterEmployees: [],
     employeeLocations: {},
-    currentUser: { id: null, name: 'User', role: 'employee' }
+    currentUser: { uid: null, name: 'User', role: 'employee', employeeId: null, employeeKey: null }
 };
 const ui = { searchQuery: '' };
 const charts = {};
@@ -61,6 +68,7 @@ const profileKey = name => encodeURIComponent(name).replace(/\./g, '%2E');
 const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const findEmployee = id => state.employees.find(e => String(e.id) === String(id));
+const emailFor = id => `${String(id).trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
 
 // ==================== Firebase API Wrapper ====================
 async function api(endpoint, method = 'GET', body = null) {
@@ -69,7 +77,7 @@ async function api(endpoint, method = 'GET', body = null) {
     const collection = pathParts[0];
     const id = pathParts[1];
     const dbRef = ref(db);
-    const clean = body ? JSON.parse(JSON.stringify(body)) : null;   // strips undefined values
+    const clean = body ? JSON.parse(JSON.stringify(body)) : null;   // strips undefined; null removes a key on update
 
     if (method === 'GET') {
         if (id) {
@@ -98,25 +106,48 @@ async function api(endpoint, method = 'GET', body = null) {
     }
 }
 
-// ==================== Initialization ====================
-function boot() {
-    let user = null;
-    try { user = JSON.parse(localStorage.getItem('duna_user')); } catch (e) { /* ignore */ }
+// ==================== Authentication ====================
+let started = false;
 
-    if (!user || !user.username) {
-        window.location.href = 'login.html';
-        return;
+async function rejectSession(key) {
+    sessionStorage.setItem('duna_login_notice', key);
+    try { await signOut(auth); } catch (e) { /* ignore */ }
+    window.location.href = 'login.html';
+}
+
+onAuthStateChanged(auth, async user => {
+    if (!user) { window.location.href = 'login.html'; return; }
+    if (started) return;
+    try {
+        const snap = await get(ref(db, `users/${user.uid}`));
+        const profile = snap.val();
+        if (!profile) { await rejectSession('errNoProfile'); return; }
+        if (profile.status && profile.status !== 'active') { await rejectSession('errInactive'); return; }
+        started = true;
+        startApp(user, profile);
+    } catch (err) {
+        console.error('Could not load user profile:', err);
+        await rejectSession('errFailed');
     }
+});
 
-    $('currentUserEmail').textContent = user.username;
-    $('headerAvatar').src = avatar(user.username);
-    state.currentUser.name = user.username;
-    state.currentUser.id = user.id || null;
-    state.currentUser.role = String(user.role).toUpperCase() === 'ADMIN' ? 'admin' : 'employee';
+function startApp(user, profile) {
+    localStorage.removeItem('duna_user');   // leftovers from the old login
+
+    state.currentUser = {
+        uid: user.uid,
+        name: profile.name || user.email,
+        role: String(profile.role).toUpperCase() === 'ADMIN' ? 'admin' : 'employee',
+        employeeId: profile.employeeId || null,
+        employeeKey: profile.employeeKey || null
+    };
+
+    $('currentUserEmail').textContent = state.currentUser.name;
+    $('headerAvatar').src = avatar(state.currentUser.name);
     applyRole();
 
-    on('logoutBtn', 'click', () => {
-        localStorage.removeItem('duna_user');
+    on('logoutBtn', 'click', async () => {
+        try { await signOut(auth); } catch (e) { /* ignore */ }
         window.location.href = 'login.html';
     });
 
@@ -131,9 +162,6 @@ function boot() {
     initializeData();
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-else boot();
-
 function applyRole() {
     document.body.className = `role-${state.currentUser.role}`;
     document.querySelectorAll('.admin-only').forEach(el => {
@@ -141,15 +169,55 @@ function applyRole() {
     });
 }
 
+// Creates a login for an employee without signing the admin out (uses a second app instance)
+let secondaryAuth = null;
+function getSecondaryAuth() {
+    if (!secondaryAuth) secondaryAuth = getAuth(initializeApp(firebaseConfig, 'secondary'));
+    return secondaryAuth;
+}
+async function createLogin(employeeId, password) {
+    const sa = getSecondaryAuth();
+    const cred = await createUserWithEmailAndPassword(sa, emailFor(employeeId), password);
+    await signOut(sa);
+    return cred.user.uid;
+}
+
+function authErrorMessage(err) {
+    const map = {
+        'auth/email-already-in-use': 'A login for this Employee ID already exists. Delete it in Firebase Console > Authentication, or use another Employee ID.',
+        'auth/weak-password': 'Password is too weak (minimum 6 characters).',
+        'auth/operation-not-allowed': 'Enable Email/Password sign-in in Firebase Authentication.',
+        'auth/invalid-credential': 'Current password is incorrect.',
+        'auth/wrong-password': 'Current password is incorrect.',
+        'auth/too-many-requests': 'Too many attempts. Try again later.',
+        'auth/requires-recent-login': 'Please sign out and sign in again, then retry.',
+        'auth/network-request-failed': 'Network error. Check your connection.'
+    };
+    return map[err && err.code] || (err && err.message) || 'Unknown error';
+}
+
+// ==================== Data loading ====================
 async function initializeData() {
     const load = async name => {
         try { return await api(`/${name}`); }
         catch (err) { console.error(`Failed to load ${name}:`, err); return []; }
     };
+    const loadOwnEmployee = async () => {
+        if (!state.currentUser.employeeKey) return [];
+        try { return [await api(`/employees/${state.currentUser.employeeKey}`)]; }
+        catch (err) { console.error('Failed to load own employee record:', err); return []; }
+    };
+    const admin = isAdmin();
 
-    const [employees, departments, attendance, performance, payroll, leave, profiles] = await Promise.all(
-        ['employees', 'departments', 'attendance', 'performance', 'payroll', 'leave', 'profile_extensions'].map(load)
-    );
+    const [employees, departments, attendance, performance, payroll, leave, profiles] = await Promise.all([
+        admin ? load('employees') : loadOwnEmployee(),
+        load('departments'),
+        load('attendance'),
+        admin ? load('performance') : [],
+        admin ? load('payroll') : [],
+        load('leave'),
+        admin ? load('profile_extensions') : []
+    ]);
 
     Object.assign(state, { employees, departments, attendance, performance, payroll, leave, profiles });
     renderAll();
@@ -172,8 +240,6 @@ function renderAll() {
 }
 
 // ==================== Mobile tables: labels + tap-to-expand ====================
-// Copies column headings onto each cell and marks the always-visible ("primary") cells.
-// CSS shows only primary cells on phones; tapping a row reveals the rest.
 function watchTables() {
     const PRIMARY_HEADS = ['Status', 'Score', 'Net Salary'];
 
@@ -182,7 +248,7 @@ function watchTables() {
             const heads = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
             table.querySelectorAll('tbody tr').forEach(tr => {
                 const cells = [...tr.children];
-                if (!cells.length || cells[0].hasAttribute('colspan')) return;   // empty-state row
+                if (!cells.length || cells[0].hasAttribute('colspan')) return;
 
                 let hasPrimary = false;
                 cells.forEach((td, i) => {
@@ -205,7 +271,6 @@ function watchTables() {
     });
     label();
 
-    // Delegated handler: tap a row to open, tap again to close; one open row per table
     document.addEventListener('click', e => {
         if (!window.matchMedia(MOBILE_QUERY).matches) return;
         const tr = e.target.closest('.data-table:not(.schedule-grid) tbody tr.collapsible');
@@ -233,14 +298,6 @@ async function fetchSchedule() {
         state.schedule = data.schedule || {};
         state.masterEmployees = data.employees || [];
         state.employeeLocations = data.employeeLocations || {};
-
-        const roleFromDb = Object.entries(data.employeeRoles || {})
-            .find(([name]) => sameName(name, state.currentUser.name))?.[1] || '';
-        if (String(roleFromDb).toLowerCase().includes('admin') && !isAdmin()) {
-            state.currentUser.role = 'admin';
-            applyRole();
-            renderAll();
-        }
 
         populateScheduleFilters();
         renderSchedule();
@@ -338,7 +395,6 @@ function setupEventListeners() {
 
     on('menuToggle', 'click', () => document.querySelector('.sidebar').classList.toggle('active'));
 
-    // Tap outside the drawer closes it (phones/tablets)
     document.addEventListener('click', e => {
         const sidebar = document.querySelector('.sidebar');
         if (sidebar.classList.contains('active') && !e.target.closest('.sidebar') && !e.target.closest('#menuToggle')) {
@@ -353,12 +409,14 @@ function setupEventListeners() {
     on('requestLeaveBtn', 'click', () => openLeaveModal());
     on('generatePayrollBtn', 'click', generatePayroll);
     on('refreshScheduleBtn', 'click', fetchSchedule);
+    on('changePasswordBtn', 'click', openPasswordModal);
 
     on('employeeForm', 'submit', e => { e.preventDefault(); saveEmployee(); });
     on('departmentForm', 'submit', e => { e.preventDefault(); saveDepartment(); });
     on('attendanceForm', 'submit', e => { e.preventDefault(); saveAttendance(); });
     on('leaveForm', 'submit', e => { e.preventDefault(); saveLeave(); });
     on('reviewForm', 'submit', e => { e.preventDefault(); saveReview(); });
+    on('passwordForm', 'submit', e => { e.preventDefault(); savePassword(); });
     on('companySettingsForm', 'submit', e => { e.preventDefault(); saveSettings(); });
 
     on('selectAll', 'change', function () {
@@ -434,6 +492,7 @@ async function openEmployeeModal(employee = null) {
     const modal = $('employeeModal');
     const form = $('employeeForm');
     const F = form.elements;
+    const hint = $('passwordHint');
     updateDropdowns();
 
     if (employee) {
@@ -447,15 +506,27 @@ async function openEmployeeModal(employee = null) {
         F.department.value = employee.department || '';
         F.position.value = employee.position || '';
         F.employeeId.value = employee.employeeId || '';
+        F.employeeId.readOnly = !!employee.uid;     // the login is tied to the ID once it exists
         F.joinDate.value = employee.joinDate || '';
         F.employmentType.value = employee.employmentType || 'full-time';
         F.salary.value = employee.salary ?? '';
         F.address.value = employee.address || '';
         F.status.value = employee.status || 'active';
 
+        F.password.value = '';
+        F.password.required = false;
+        if (employee.uid) {
+            F.password.disabled = true;
+            F.password.placeholder = 'Managed by the employee';
+            if (hint) hint.textContent = 'The employee changes their own password with the key icon in the header.';
+        } else {
+            F.password.disabled = false;
+            F.password.placeholder = "Set a password to create this employee's login";
+            if (hint) hint.textContent = 'This employee has no login yet. Enter a password (min 6 characters) to create one.';
+        }
+
         try {
             const profile = await api(`/profile_extensions/${profileKey(fullNameOf(employee))}`);
-            F.password.value = profile.password || '';
             F.role.value = profile.role || 'USER';
             F.location.value = profile.location || 'General';
             F.logType.value = profile.logType || 'Logs';
@@ -468,6 +539,11 @@ async function openEmployeeModal(employee = null) {
         delete form.dataset.editId;
         delete form.dataset.oldName;
         form.reset();
+        F.employeeId.readOnly = false;
+        F.password.disabled = false;
+        F.password.required = true;
+        F.password.placeholder = 'Set a login password';
+        if (hint) hint.textContent = 'Login: Employee ID + this password (min 6 characters).';
     }
     modal.classList.add('active');
 }
@@ -508,6 +584,36 @@ function openEmployeeDetails(employee) {
     $('detailAddress').textContent = employee.address || 'N/A';
     $('detailStatus').innerHTML = `<span class="status-badge ${esc(employee.status)}">${esc(employee.status)}</span>`;
     $('employeeDetailsModal').classList.add('active');
+}
+
+// ==================== Change own password ====================
+function openPasswordModal() {
+    $('passwordForm').reset();
+    $('passwordModal').classList.add('active');
+}
+
+async function savePassword() {
+    const F = $('passwordForm').elements;
+    const current = F.currentPassword.value;
+    const next = F.newPassword.value;
+    const confirmPw = F.confirmPassword.value;
+
+    if (next.length < 6) { showToast('New password must be at least 6 characters', 'error'); return; }
+    if (next !== confirmPw) { showToast('New passwords do not match', 'error'); return; }
+    if (next === current) { showToast('New password must be different', 'error'); return; }
+
+    const user = auth.currentUser;
+    if (!user) { showToast('Please sign in again', 'error'); return; }
+
+    try {
+        const credential = EmailAuthProvider.credential(user.email, current);
+        await reauthenticateWithCredential(user, credential);
+        await updatePassword(user, next);
+        closeModal('passwordModal');
+        showToast('Password updated successfully!', 'success');
+    } catch (err) {
+        showToast(authErrorMessage(err), 'error');
+    }
 }
 
 // ==================== Dashboard ====================
@@ -605,12 +711,15 @@ function editEmployee(id) {
 }
 
 async function deleteEmployee(id) {
-    if (!confirm('Are you sure you want to delete this employee?')) return;
+    if (!confirm('Are you sure you want to delete this employee? They will lose access immediately.')) return;
     try {
         const employee = findEmployee(id);
         await api(`/employees/${id}`, 'DELETE');
         if (employee) {
             try { await api(`/profile_extensions/${profileKey(fullNameOf(employee))}`, 'DELETE'); } catch (e) { /* ignore */ }
+            if (employee.uid) {
+                try { await api(`/users/${employee.uid}`, 'DELETE'); } catch (e) { console.warn('Could not remove users record', e); }
+            }
         }
         state.employees = state.employees.filter(e => String(e.id) !== String(id));
         renderEmployees();
@@ -618,7 +727,7 @@ async function deleteEmployee(id) {
         renderDepartments();
         renderUsers();
         updateDropdowns();
-        showToast('Employee deleted successfully!', 'success');
+        showToast('Employee deleted. Remove their login in Firebase Console > Authentication to reuse the ID.', 'success');
     } catch (err) {
         showToast('Failed to delete employee: ' + err.message, 'error');
     }
@@ -629,14 +738,31 @@ async function saveEmployee() {
     const F = form.elements;
     const editId = form.dataset.editId;
     const oldName = form.dataset.oldName;
+    const existing = editId ? findEmployee(editId) : null;
 
     const firstName = F.firstName.value.trim();
     const lastName = F.lastName.value.trim();
     const fullName = `${firstName} ${lastName}`;
     const employeeId = F.employeeId.value.trim();
+    const newPassword = F.password.disabled ? '' : F.password.value;
+    const role = F.role.value === 'ADMIN' ? 'ADMIN' : 'USER';
+    const needsLogin = !existing || !existing.uid;      // new employee, or an old one without a login
+    const creatingLogin = needsLogin && !!newPassword;
 
-    if (state.employees.some(e => e.employeeId === employeeId && String(e.id) !== String(editId))) {
+    if (state.employees.some(e => String(e.employeeId).toLowerCase() === employeeId.toLowerCase() && String(e.id) !== String(editId))) {
         showToast('Employee ID already exists', 'error');
+        return;
+    }
+    if (!editId && !newPassword) {
+        showToast('A password is required for new employees', 'error');
+        return;
+    }
+    if (newPassword && newPassword.length < 6) {
+        showToast('Password must be at least 6 characters', 'error');
+        return;
+    }
+    if ((creatingLogin || !editId) && !ID_PATTERN.test(employeeId)) {
+        showToast('Employee ID may contain only letters, digits, dot, underscore and hyphen', 'error');
         return;
     }
 
@@ -654,6 +780,7 @@ async function saveEmployee() {
         status: F.status.value
     };
 
+    // Profile info only. Passwords live in Firebase Authentication; old plain-text fields are scrubbed.
     const profileData = {
         address: employeeData.address,
         bio: F.bio.value || '',
@@ -661,29 +788,48 @@ async function saveEmployee() {
         image: avatar(fullName),
         location: F.location.value || 'General',
         logType: F.logType.value || 'Logs',
-        password: F.password.value || '123456',
         phone: employeeData.phone,
-        role: F.role.value || 'USER'
+        role,
+        password: null, passwordHash: null, salt: null, iterations: null, hashAlgo: null
     };
 
+    let uid = existing?.uid || null;
     try {
+        // 1) Firebase Authentication login (Employee ID + password)
+        if (creatingLogin) uid = await createLogin(employeeId, newPassword);
+
+        // 2) Employee record
+        const dataToSave = uid ? { ...employeeData, uid } : employeeData;
+        let saved;
         if (editId) {
-            const updated = await api(`/employees/${editId}`, 'PUT', employeeData);
+            saved = await api(`/employees/${editId}`, 'PUT', dataToSave);
             const index = state.employees.findIndex(e => String(e.id) === String(editId));
-            if (index !== -1) state.employees[index] = updated;
+            if (index !== -1) state.employees[index] = saved;
             if (oldName && oldName !== fullName) {
                 try { await api(`/profile_extensions/${profileKey(oldName)}`, 'DELETE'); } catch (e) { /* ignore */ }
             }
-            showToast('Employee updated successfully!', 'success');
         } else {
-            const created = await api('/employees', 'POST', employeeData);
-            state.employees.push(created);
-            showToast('Employee added successfully!', 'success');
+            saved = await api('/employees', 'POST', dataToSave);
+            state.employees.push(saved);
         }
 
+        // 3) users/<uid>: what the login page and the database rules read
+        if (uid) {
+            await api(`/users/${uid}`, 'PUT', {
+                employeeId,
+                employeeKey: saved.id,
+                name: fullName,
+                role,
+                status: employeeData.status === 'active' ? 'active' : 'inactive'
+            });
+        }
+
+        // 4) Profile extension (no passwords)
         await api(`/profile_extensions/${profileKey(fullName)}`, 'PUT', profileData);
         state.profiles = await api('/profile_extensions').catch(() => state.profiles);
 
+        showToast(editId ? (creatingLogin ? 'Employee updated and login created!' : 'Employee updated successfully!')
+                         : 'Employee added and login created!', 'success');
         closeModal('employeeModal');
         renderEmployees();
         renderDashboard();
@@ -691,7 +837,8 @@ async function saveEmployee() {
         renderUsers();
         updateDropdowns();
     } catch (err) {
-        showToast('Failed to save employee: ' + err.message, 'error');
+        console.error('saveEmployee failed:', err);
+        showToast('Failed to save employee: ' + authErrorMessage(err), 'error');
     }
 }
 
@@ -1309,7 +1456,7 @@ function showToast(message, type = 'success') {
         <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
     `;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3500);
+    setTimeout(() => toast.remove(), 4500);
 }
 
 // ==================== Expose to inline onclick handlers ====================
