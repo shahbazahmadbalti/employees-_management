@@ -21,6 +21,7 @@ const CURRENCY = 'USD';
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
 const PAYROLL_RULES = { allowanceRate: 0.10, deductionRate: 0.08 };
+const MOBILE_QUERY = '(max-width: 768px)';
 const SCHEDULE_COLORS = {
     FA: ['#bfdbfe', '#1e40af'],
     P2: ['#bbf7d0', '#166534'],
@@ -68,7 +69,7 @@ async function api(endpoint, method = 'GET', body = null) {
     const collection = pathParts[0];
     const id = pathParts[1];
     const dbRef = ref(db);
-    const clean = body ? JSON.parse(JSON.stringify(body)) : null;
+    const clean = body ? JSON.parse(JSON.stringify(body)) : null;   // strips undefined values
 
     if (method === 'GET') {
         if (id) {
@@ -125,6 +126,7 @@ function boot() {
     $('schedYear').value = String(now.getFullYear());
 
     setupEventListeners();
+    watchTables();
     loadSettings();
     initializeData();
 }
@@ -167,6 +169,52 @@ function renderAll() {
         renderUsers();
     }
     updateNotifications();
+}
+
+// ==================== Mobile tables: labels + tap-to-expand ====================
+// Copies column headings onto each cell and marks the always-visible ("primary") cells.
+// CSS shows only primary cells on phones; tapping a row reveals the rest.
+function watchTables() {
+    const PRIMARY_HEADS = ['Status', 'Score', 'Net Salary'];
+
+    const label = () => {
+        document.querySelectorAll('.data-table:not(.schedule-grid)').forEach(table => {
+            const heads = [...table.querySelectorAll('thead th')].map(th => th.textContent.trim());
+            table.querySelectorAll('tbody tr').forEach(tr => {
+                const cells = [...tr.children];
+                if (!cells.length || cells[0].hasAttribute('colspan')) return;   // empty-state row
+
+                let hasPrimary = false;
+                cells.forEach((td, i) => {
+                    if (heads[i]) td.dataset.label = heads[i];
+                    if (td.querySelector('.user-info') || PRIMARY_HEADS.includes(heads[i])) {
+                        td.dataset.primary = '1';
+                        hasPrimary = true;
+                    } else {
+                        delete td.dataset.primary;
+                    }
+                });
+                if (!hasPrimary && cells[1]) cells[1].dataset.primary = '1';
+                tr.classList.add('collapsible');
+            });
+        });
+    };
+
+    document.querySelectorAll('.data-table:not(.schedule-grid) tbody').forEach(tb => {
+        new MutationObserver(label).observe(tb, { childList: true });
+    });
+    label();
+
+    // Delegated handler: tap a row to open, tap again to close; one open row per table
+    document.addEventListener('click', e => {
+        if (!window.matchMedia(MOBILE_QUERY).matches) return;
+        const tr = e.target.closest('.data-table:not(.schedule-grid) tbody tr.collapsible');
+        if (!tr || e.target.closest('button, a, input, select, label')) return;
+
+        const wasOpen = tr.classList.contains('open');
+        tr.closest('tbody').querySelectorAll('tr.open').forEach(r => r.classList.remove('open'));
+        if (!wasOpen) tr.classList.add('open');
+    });
 }
 
 // ==================== Schedule (Google Sheets) ====================
@@ -290,6 +338,14 @@ function setupEventListeners() {
 
     on('menuToggle', 'click', () => document.querySelector('.sidebar').classList.toggle('active'));
 
+    // Tap outside the drawer closes it (phones/tablets)
+    document.addEventListener('click', e => {
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar.classList.contains('active') && !e.target.closest('.sidebar') && !e.target.closest('#menuToggle')) {
+            sidebar.classList.remove('active');
+        }
+    });
+
     on('addEmployeeBtn', 'click', () => openEmployeeModal());
     on('addDepartmentBtn', 'click', () => openDepartmentModal());
     on('markAttendanceBtn', 'click', () => openAttendanceModal());
@@ -362,6 +418,7 @@ function showSection(sectionId) {
     $('pageTitle').textContent = PAGE_TITLES[sectionId] || 'Dashboard';
     document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
     section.classList.add('active');
+    section.scrollTop = 0;
     document.querySelector('.sidebar').classList.remove('active');
 
     if (sectionId === 'dashboard' && isAdmin()) renderAttendanceChart();
@@ -966,6 +1023,7 @@ function viewPayslip(id) {
     const w = window.open('', '_blank', 'width=520,height=640');
     if (!w) { showToast('Allow pop-ups to view the payslip', 'error'); return; }
     w.document.write(`<html><head><title>Payslip - ${esc(p.name)}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>body{font-family:Arial,sans-serif;padding:24px}td{padding:6px 12px;border-bottom:1px solid #ddd}</style></head><body>
         <h2>Payslip</h2><p>${esc(p.name)} (${esc(p.employeeId)}) - ${esc(p.department)}<br>Period: ${esc(p.month)}/${esc(p.year)}</p>
         <table><tr><td>Basic Salary</td><td>${formatCurrency(p.basicSalary)}</td></tr>
