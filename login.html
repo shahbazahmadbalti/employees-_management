@@ -251,13 +251,13 @@
             HOME_URL: "/",
             LOGO_URL: "logo.png",
             SHOW_NAMES: false,
-            AUTH_EMAIL_DOMAIN: "dunanetworks.com",   // must match script.js
+            AUTH_EMAIL_DOMAIN: "dunanetworks.com",   // must match js/core.js
             START_KEYS: ['start', 'in', 'checkIn', 'from', 'begin'],
             END_KEYS: ['end', 'out', 'checkOut', 'to', 'finish']
         };
         const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
         const LOCALES = { en: 'en-US', hu: 'hu-HU', ko: 'ko-KR', de: 'de-DE' };
-        const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+        const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
         const emailFor = id => `${String(id).trim().toLowerCase()}@${CONFIG.AUTH_EMAIL_DOMAIN}`;
 
         // ====================== Translations ======================
@@ -542,11 +542,9 @@
         // ====================== Login (Firebase Authentication) ======================
         let submitting = false;
 
-        // Message left by the dashboard when it rejected a session (inactive / not set up)
         const notice = sessionStorage.getItem('duna_login_notice');
         if (notice) { sessionStorage.removeItem('duna_login_notice'); showError({ key: notice }); }
 
-        // Already signed in? Go straight to the app.
         onAuthStateChanged(auth, user => {
             if (user && !submitting) window.location.replace('index.html');
         });
