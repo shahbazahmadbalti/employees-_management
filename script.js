@@ -17,7 +17,7 @@ const db = getDatabase(app);
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
 
 // ==================== Config ====================
-const CURRENCY = 'USD';                       // change to 'HUF' / 'EUR' if needed
+const CURRENCY = 'USD';
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
 const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
 const PAYROLL_RULES = { allowanceRate: 0.10, deductionRate: 0.08 };
@@ -68,7 +68,7 @@ async function api(endpoint, method = 'GET', body = null) {
     const collection = pathParts[0];
     const id = pathParts[1];
     const dbRef = ref(db);
-    const clean = body ? JSON.parse(JSON.stringify(body)) : null; // strips undefined
+    const clean = body ? JSON.parse(JSON.stringify(body)) : null;
 
     if (method === 'GET') {
         if (id) {
@@ -815,7 +815,7 @@ async function saveAttendance() {
         }
         closeModal('attendanceModal');
         renderAttendance();
-        renderDashboard();
+        if (isAdmin()) renderDashboard();
         showToast('Attendance saved!', 'success');
     } catch (err) {
         showToast('Failed to save attendance: ' + err.message, 'error');
@@ -828,7 +828,7 @@ async function markAttendance(employeeId, id) {
         const i = state.attendance.findIndex(a => String(a.id) === String(id));
         if (i !== -1) state.attendance[i] = updated;
         renderAttendance();
-        renderDashboard();
+        if (isAdmin()) renderDashboard();
         showToast('Attendance marked!', 'success');
     } catch (err) {
         showToast('Failed to mark attendance: ' + err.message, 'error');
@@ -931,6 +931,7 @@ function renderPayroll() {
 }
 
 async function generatePayroll() {
+    if (!isAdmin()) { showToast('Admins only', 'error'); return; }
     const { month, year } = selectedPayrollPeriod();
     const dept = $('payrollDepartment').value;
     const targets = state.employees.filter(e => e.status === 'active' && (!dept || e.department === dept));
@@ -1065,7 +1066,7 @@ async function saveLeave() {
         state.leave.push(await api('/leave', 'POST', data));
         closeModal('leaveModal');
         renderLeave();
-        renderDashboard();
+        if (isAdmin()) renderDashboard();
         showToast('Leave request submitted!', 'success');
     } catch (err) {
         showToast('Failed to submit leave: ' + err.message, 'error');
@@ -1078,7 +1079,7 @@ async function setLeaveStatus(id, status, message) {
         const i = state.leave.findIndex(l => String(l.id) === String(id));
         if (i !== -1) state.leave[i] = updated;
         renderLeave();
-        renderDashboard();
+        if (isAdmin()) renderDashboard();
         showToast(message, 'success');
     } catch (err) {
         showToast('Failed to update leave: ' + err.message, 'error');
@@ -1161,4 +1162,106 @@ function renderUsers() {
         return `<tr>
             <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
             <td>${role}</td>
-            <td>${esc(emp.employeeId)}</td
+            <td>${esc(emp.employeeId)}</td>
+            <td><span class="status-badge ${esc(emp.status)}">${esc(emp.status)}</span></td>
+        </tr>`;
+    }).join('') || '<tr><td colspan="4" style="text-align:center;">No users</td></tr>';
+}
+
+function updateNotifications() {
+    const el = $('notifCount');
+    if (el) el.textContent = state.leave.filter(l => l.status === 'pending').length;
+}
+
+// ==================== Helpers ====================
+function updateDropdowns() {
+    const deptOptions = state.departments.map(d => `<option value="${esc(d.name)}">${esc(d.name)}</option>`).join('');
+    [
+        ['departmentFilter', 'All Departments'],
+        ['performanceDepartment', 'All Departments'],
+        ['payrollDepartment', 'All Departments'],
+        ['employeeDepartment', 'Select Department']
+    ].forEach(([id, label]) => {
+        const select = $(id);
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = `<option value="">${label}</option>` + deptOptions;
+        select.value = current;
+    });
+
+    const head = $('departmentHead');
+    if (head) {
+        const current = head.value;
+        head.innerHTML = '<option value="">Select Employee</option>' +
+            state.employees.map(e => `<option value="${esc(fullNameOf(e))}">${esc(fullNameOf(e))}</option>`).join('');
+        head.value = current;
+    }
+
+    const pool = isAdmin() ? state.employees : state.employees.filter(e => sameName(fullNameOf(e), state.currentUser.name));
+    const empOptions = pool.map(e => `<option value="${esc(e.id)}">${esc(fullNameOf(e))}</option>`).join('');
+    ['attendanceEmployee', 'leaveEmployee', 'reviewEmployee'].forEach(id => {
+        const select = $(id);
+        if (!select) return;
+        const current = select.value;
+        select.innerHTML = '<option value="">Select Employee</option>' + empOptions;
+        select.value = current;
+    });
+}
+
+function handleGlobalSearch(e) {
+    const query = e.target.value.trim().toLowerCase();
+    ui.searchQuery = query.length >= 2 ? query : '';
+    if (!isAdmin()) return;
+    if (ui.searchQuery) showSection('employees');
+    renderEmployees();
+}
+
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: CURRENCY,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(Number(amount) || 0);
+}
+
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    if (isNaN(date)) return esc(dateString);
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatEmploymentType(type) {
+    const types = { 'full-time': 'Full Time', 'part-time': 'Part Time', 'contract': 'Contract', 'internship': 'Internship' };
+    return types[type] || type || 'N/A';
+}
+
+function formatLeaveType(type) {
+    const types = { sick: 'Sick Leave', casual: 'Casual Leave', annual: 'Annual Leave', maternity: 'Maternity Leave' };
+    return types[type] || esc(type);
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
+        <span>${esc(message)}</span>
+        <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3500);
+}
+
+// ==================== Expose to inline onclick handlers ====================
+// script.js is an ES module, so its functions are private unless attached to window.
+Object.assign(window, {
+    showSection, closeModal,
+    viewEmployee, editEmployee, deleteEmployee,
+    editDepartment, deleteDepartment,
+    markAttendance, editAttendance,
+    viewPayslip, processPayment,
+    approveLeave, rejectLeave,
+    generateReport
+});
