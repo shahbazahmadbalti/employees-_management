@@ -147,42 +147,56 @@
     </div>
 
     <script>
-        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
+    const BTN_HTML = '<i class="fas fa-unlock-alt"></i> Unlock Workspace &rarr;';
 
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value.trim();
-            const errorElement = document.getElementById('errorMessage');
-            const btn = document.getElementById('submitBtn');
-            
-            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
-            btn.disabled = true;
-            errorElement.style.display = 'none';
-            
-            try {
-                const res = await fetch(GOOGLE_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: JSON.stringify({ action: 'LOGIN', username, password })
-                });
-                
-                let data;
-                try { data = await res.json(); } catch(e) { data = {status: 'success'}; }
-                
-                if(data.status === 'error') {
-                    throw new Error(data.message || 'Invalid credentials');
-                }
+    // Already signed in? Go straight to the app.
+    try {
+        const saved = JSON.parse(localStorage.getItem('duna_user'));
+        if (saved && saved.username) window.location.replace('index.html');
+    } catch (e) { localStorage.removeItem('duna_user'); }
 
-                localStorage.setItem('duna_user', JSON.stringify({ username, role: username === 'ADMIN' ? 'ADMIN' : 'USER' }));
-                window.location.href = '/index.html';
-            } catch (error) {
-                errorElement.style.display = 'block';
-                errorElement.textContent = error.message || 'Login failed. Check credentials.';
-                btn.innerHTML = '<i class="fas fa-unlock-alt"></i> Unlock Workspace &rarr;';
-                btn.disabled = false;
-            }
-        });
-    </script>
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const errorElement = document.getElementById('errorMessage');
+        const btn = document.getElementById('submitBtn');
+
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
+        btn.disabled = true;
+        errorElement.style.display = 'none';
+
+        try {
+            const res = await fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'LOGIN', username, password })
+            });
+            if (!res.ok) throw new Error('Server error (' + res.status + ')');
+
+            let data;
+            try { data = await res.json(); }
+            catch (err) { throw new Error('Unexpected response from the login server'); }
+            console.log('LOGIN response:', data);
+
+            const ok = data.status === 'success' || data.success === true;
+            if (!ok) throw new Error(data.message || 'Invalid credentials');
+
+            const isAdmin = String(data.role || '').toUpperCase().includes('ADMIN') || username.toUpperCase() === 'ADMIN';
+            localStorage.setItem('duna_user', JSON.stringify({
+                username: data.username || username,
+                role: isAdmin ? 'ADMIN' : 'USER'
+            }));
+            window.location.href = 'index.html';
+        } catch (error) {
+            errorElement.style.display = 'block';
+            errorElement.textContent = error.message || 'Login failed. Check credentials.';
+            btn.innerHTML = BTN_HTML;
+            btn.disabled = false;
+        }
+    });
+</script>
+
 </body>
 </html>
