@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Employee Management System</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -50,7 +50,10 @@
                     <div class="user-profile">
                         <img src="https://ui-avatars.com/api/?name=User&background=4F46E5&color=fff" alt="User" id="headerAvatar">
                         <span id="currentUserEmail">Loading...</span>
-                        <button id="logoutBtn" style="margin-left: 10px; background: none; border: none; cursor: pointer; color: #ef4444;" title="Logout">
+                        <button id="changePasswordBtn" title="Change password" style="margin-left: 10px; background: none; border: none; cursor: pointer; color: #4F46E5;">
+                            <i class="fas fa-key"></i>
+                        </button>
+                        <button id="logoutBtn" style="margin-left: 4px; background: none; border: none; cursor: pointer; color: #ef4444;" title="Logout">
                             <i class="fas fa-sign-out-alt"></i>
                         </button>
                     </div>
@@ -420,7 +423,7 @@
                                 <thead><tr><th>User</th><th>Role</th><th>Employee ID</th><th>Status</th></tr></thead>
                                 <tbody></tbody>
                             </table>
-                            <p style="margin-top: 1rem; color: #6b7280;">Users are created from the Employees page (Portal Access section).</p>
+                            <p style="margin-top: 1rem; color: #6b7280;">Logins are created from the Employees page: Employee ID + password.</p>
                         </div>
                     </div>
 
@@ -488,7 +491,10 @@
                         <div class="form-group"><label>Position *</label><input type="text" name="position" required class="form-control"></div>
                     </div>
                     <div class="form-row">
-                        <div class="form-group"><label>Employee ID *</label><input type="text" name="employeeId" required class="form-control"></div>
+                        <div class="form-group">
+                            <label>Employee ID * (used to log in)</label>
+                            <input type="text" name="employeeId" required class="form-control" pattern="[A-Za-z0-9._\-]+" title="Letters, digits, dot, underscore and hyphen only" autocapitalize="none">
+                        </div>
                         <div class="form-group"><label>Join Date *</label><input type="date" name="joinDate" required class="form-control"></div>
                     </div>
                     <div class="form-row">
@@ -512,9 +518,13 @@
                         </select>
                     </div>
 
-                    <h4 style="margin: 20px 0 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Portal Access (Profile Extensions)</h4>
+                    <h4 style="margin: 20px 0 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px;">Portal Access</h4>
                     <div class="form-row">
-                        <div class="form-group"><label>Password *</label><input type="text" name="password" required class="form-control" placeholder="Login password"></div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" name="password" class="form-control" autocomplete="new-password" minlength="6" placeholder="Set a login password">
+                            <small id="passwordHint" style="color:#6b7280; display:block; margin-top:4px;"></small>
+                        </div>
                         <div class="form-group">
                             <label>Role *</label>
                             <select name="role" required class="form-control">
@@ -703,6 +713,36 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('reviewModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary">Save Review</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Change Password Modal -->
+    <div class="modal" id="passwordModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Change Password</h3>
+                <button class="modal-close" onclick="closeModal('passwordModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="passwordForm">
+                    <div class="form-group">
+                        <label>Current password</label>
+                        <input type="password" name="currentPassword" required class="form-control" autocomplete="current-password">
+                    </div>
+                    <div class="form-group">
+                        <label>New password (min 6 characters)</label>
+                        <input type="password" name="newPassword" required minlength="6" class="form-control" autocomplete="new-password">
+                    </div>
+                    <div class="form-group">
+                        <label>Confirm new password</label>
+                        <input type="password" name="confirmPassword" required minlength="6" class="form-control" autocomplete="new-password">
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('passwordModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Password</button>
                     </div>
                 </form>
             </div>
