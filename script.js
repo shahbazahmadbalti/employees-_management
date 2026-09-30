@@ -348,7 +348,7 @@ function showSection(sectionId) {
 }
 
 // ==================== Modal Functions ====================
-function openEmployeeModal(employee = null) {
+async function openEmployeeModal(employee = null) {
     const modal = document.getElementById('employeeModal');
     const title = document.getElementById('employeeModalTitle');
     const form = document.getElementById('employeeForm');
@@ -368,6 +368,20 @@ function openEmployeeModal(employee = null) {
         form.salary.value = employee.salary;
         form.address.value = employee.address;
         form.status.value = employee.status;
+
+        try {
+            const fullName = `${employee.firstName} ${employee.lastName}`;
+            const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
+            const profile = await api(`/profile_extensions/${safeKey}`);
+            
+            if(form.password) form.password.value = profile.password || '';
+            if(form.role) form.role.value = profile.role || 'USER';
+            if(form.location) form.location.value = profile.location || 'General';
+            if(form.logType) form.logType.value = profile.logType || 'Logs';
+            if(form.bio) form.bio.value = profile.bio || '';
+        } catch(e) {
+            console.log("No profile extension found for this user");
+        }
     } else {
         title.textContent = 'Add New Employee';
         delete form.dataset.editId;
@@ -501,7 +515,15 @@ function editEmployee(id) {
 async function deleteEmployee(id) {
     if (confirm('Are you sure you want to delete this employee?')) {
         try {
+            const employee = state.employees.find(e => e.id == id);
             await api(`/employees/${id}`, 'DELETE');
+            
+            if (employee) {
+                const fullName = `${employee.firstName} ${employee.lastName}`;
+                const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
+                await api(`/profile_extensions/${safeKey}`, 'DELETE');
+            }
+
             state.employees = state.employees.filter(e => e.id != id);
             renderEmployees();
             renderDashboard();
@@ -516,9 +538,13 @@ async function saveEmployee() {
     const form = document.getElementById('employeeForm');
     const editId = form.dataset.editId;
 
+    const firstName = form.firstName.value;
+    const lastName = form.lastName.value;
+    const fullName = `${firstName} ${lastName}`;
+
     const employeeData = {
-        firstName: form.firstName.value,
-        lastName: form.lastName.value,
+        firstName: firstName,
+        lastName: lastName,
         email: form.email.value,
         phone: form.phone.value,
         department: form.department.value,
@@ -531,7 +557,21 @@ async function saveEmployee() {
         status: form.status.value
     };
 
+    // Construct profile extension data
+    const profileData = {
+        address: form.address.value || "",
+        bio: form.bio?.value || "",
+        email: form.email.value || "",
+        image: "https://ui-avatars.com/api/?name=" + encodeURIComponent(fullName) + "&background=4F46E5&color=fff",
+        location: form.location?.value || "General",
+        logType: form.logType?.value || "Logs",
+        password: form.password?.value || "123456",
+        phone: form.phone.value || "",
+        role: form.role?.value || "USER"
+    };
+
     try {
+        // Save to /employees
         if (editId) {
             const updated = await api(`/employees/${editId}`, 'PUT', employeeData);
             const index = state.employees.findIndex(e => e.id == editId);
@@ -542,6 +582,11 @@ async function saveEmployee() {
             state.employees.push(newEmp);
             showToast('Employee added successfully!', 'success');
         }
+
+        // Save to /profile_extensions
+        // Firebase keys cannot contain . # $ [ ]
+        const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
+        await api(`/profile_extensions/${safeKey}`, 'PUT', profileData);
 
         closeModal('employeeModal');
         renderEmployees();
