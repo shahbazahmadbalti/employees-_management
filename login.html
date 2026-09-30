@@ -2,201 +2,623 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Duna Networks - Secure Login</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { margin: 0; font-family: 'Inter', sans-serif; background: #f8fbff; color: #1e293b; display: flex; height: 100vh; overflow: hidden; }
-        .login-layout { display: flex; width: 100%; max-width: 1400px; margin: 0 auto; }
-        
-        /* Left Side */
-        .left-col { flex: 1; padding: 60px; display: flex; flex-direction: column; justify-content: center; position: relative; }
-        .logo { position: absolute; top: 40px; left: 60px; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; color: #1e3a8a; }
-        .logo i { font-size: 24px; }
-        
-        .pill { display: inline-flex; align-items: center; gap: 8px; background: white; padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; color: #0f766e; border: 1px solid #e2e8f0; letter-spacing: 0.5px; margin-bottom: 24px; align-self: flex-start; text-transform: uppercase; }
-        .pill .dot { width: 6px; height: 6px; background: #10b981; border-radius: 50%; }
-        
-        h1 { font-size: 56px; line-height: 1.1; margin: 0 0 20px 0; font-weight: 800; color: #0f172a; }
-        h1 .highlight { color: #1d4ed8; }
-        
-        .desc { font-size: 18px; color: #64748b; max-width: 500px; margin-bottom: 40px; line-height: 1.5; }
-        
-        .features { display: flex; gap: 20px; margin-bottom: 60px; }
-        .feature-box { background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; width: 200px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-        .feature-box i { color: #3b82f6; font-size: 20px; margin-bottom: 12px; background: #eff6ff; padding: 10px; border-radius: 8px; }
-        .feature-box h3 { font-size: 14px; margin: 0 0 6px 0; font-weight: 600; }
-        .feature-box p { font-size: 12px; color: #64748b; margin: 0; line-height: 1.4; }
-        
-        .footer-note { position: absolute; bottom: 40px; left: 60px; font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 6px; }
-        .footer-note .dot { width: 6px; height: 6px; background: #10b981; border-radius: 50%; }
+        :root {
+            --blue: #3b82f6;
+            --indigo: #4f46e5;
+            --navy: #0f172a;
+            --ink: #1e293b;
+            --muted: #64748b;
+            --line: #e2e8f0;
+            --green: #10b981;
+            --teal: #0f766e;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: 'Inter', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(160deg, #f8fbff 0%, #eef3fb 55%, #e9eefb 100%);
+            color: var(--ink);
+            min-height: 100vh;
+            min-height: 100dvh;
+            line-height: 1.5;
+        }
 
-        /* Right Side */
-        .right-col { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; }
-        
-        .top-nav { position: absolute; top: 40px; right: 60px; display: flex; gap: 16px; }
-        .nav-btn { background: white; border: 1px solid #e2e8f0; padding: 8px 16px; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; color: #1e293b; text-decoration: none; }
-        
-        .login-card { background: white; width: 400px; border-radius: 30px; box-shadow: 0 20px 40px rgba(0,0,0,0.08); overflow: hidden; border: 1px solid #e2e8f0; position: relative; }
-        .card-header { background: linear-gradient(180deg, #f0f7ff 0%, #ffffff 100%); padding: 40px 40px 20px; text-align: center; }
-        .lock-icon-bg { background: #3b82f6; width: 60px; height: 60px; border-radius: 16px; display: flex; justify-content: center; align-items: center; color: white; font-size: 24px; margin: 0 auto 20px; box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.4); }
-        .card-header h2 { margin: 0; font-size: 28px; font-weight: 800; color: #0f172a; }
-        .sec-title { font-size: 11px; font-weight: 700; color: #0f766e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-        .card-header p { font-size: 14px; color: #64748b; margin: 10px 0 0; }
-        
-        .card-body { padding: 30px 40px 40px; }
-        .form-group { margin-bottom: 24px; position: relative; }
-        .form-group label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; margin-bottom: 8px; letter-spacing: 0.5px; }
-        .form-group input { width: 100%; padding: 14px 16px; border: 1px solid #cbd5e1; border-radius: 12px; font-size: 14px; box-sizing: border-box; outline: none; transition: all 0.2s; }
-        .form-group input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
-        .input-icon { position: absolute; right: 16px; top: 38px; color: #94a3b8; }
-        
-        .btn-submit { width: 100%; padding: 16px; background: #3b82f6; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px; transition: background 0.2s; box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3); }
-        .btn-submit:hover { background: #2563eb; }
-        .btn-submit i { font-size: 14px; }
-        
-        .roster-link { text-align: center; margin-top: 30px; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 1px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-        .roster-link i { width: 30px; height: 30px; border-radius: 50%; border: 1px solid #e2e8f0; display: flex; justify-content: center; align-items: center; font-size: 12px; }
+        /* ---------- Top bar ---------- */
+        .topbar {
+            position: sticky; top: 0; z-index: 50;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 12px max(20px, env(safe-area-inset-left)) 12px max(20px, env(safe-area-inset-right));
+            background: rgba(255, 255, 255, 0.85);
+            -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+        }
+        .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: inherit; min-width: 0; }
+        .brand-logo { width: 46px; height: 46px; display: grid; place-items: center; flex-shrink: 0; }
+        .brand-logo img { width: 100%; height: 100%; object-fit: contain; }
+        .brand-logo .fallback { display: none; width: 100%; height: 100%; border-radius: 12px; background: linear-gradient(135deg, #2563eb, var(--indigo)); color: white; place-items: center; font-size: 20px; }
+        .brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+        .brand-text strong { font-size: 20px; font-weight: 800; color: #1e3a8a; letter-spacing: -0.3px; white-space: nowrap; }
+        .brand-text small { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: 1px; }
 
-        .error-message { color: #ef4444; font-size: 13px; text-align: center; margin-top: 15px; font-weight: 500; display: none; }
+        .top-actions { display: flex; align-items: center; gap: 10px; }
+        .lang-select { position: relative; display: flex; align-items: center; background: white; border: 1px solid var(--line); border-radius: 999px; padding: 0 12px 0 14px; height: 42px; gap: 8px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
+        .lang-select i { color: var(--blue); font-size: 18px; pointer-events: none; }
+        .lang-select select { appearance: none; -webkit-appearance: none; border: none; background: transparent; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); padding-right: 18px; height: 100%; cursor: pointer; outline: none; }
+        .lang-select::after { content: ""; position: absolute; right: 14px; top: 50%; width: 6px; height: 6px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+        .lang-select:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .icon-btn { width: 42px; height: 42px; border-radius: 12px; background: #e8eef8; color: #1e3a8a; display: grid; place-items: center; text-decoration: none; transition: background 0.2s; }
+        .icon-btn:hover { background: #dbe5f5; }
 
-        /* Background graphics */
-        .bg-blob { position: absolute; width: 600px; height: 600px; background: radial-gradient(circle, rgba(239,246,255,1) 0%, rgba(248,251,255,0) 70%); top: -200px; right: -200px; z-index: -1; }
+        /* ---------- Layout ---------- */
+        .page {
+            display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 48px;
+            max-width: 1240px; margin: 0 auto;
+            padding: 48px 24px 24px; align-items: start;
+        }
+        .pill { display: inline-flex; align-items: center; gap: 8px; background: white; padding: 7px 14px; border-radius: 999px; font-size: 11px; font-weight: 700; color: var(--teal); border: 1px solid var(--line); letter-spacing: 0.6px; margin-bottom: 22px; text-transform: uppercase; }
+        .dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; flex-shrink: 0; }
+
+        h1 { font-size: clamp(34px, 5.2vw, 58px); line-height: 1.08; font-weight: 800; color: var(--navy); letter-spacing: -1px; margin-bottom: 18px; }
+        h1 .highlight { color: #2f4fd8; display: block; }
+        .desc { font-size: clamp(15px, 1.6vw, 18px); color: var(--muted); max-width: 520px; margin-bottom: 30px; }
+
+        .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }
+        .feature-box { background: rgba(255, 255, 255, 0.9); padding: 18px; border-radius: 16px; border: 1px solid var(--line); box-shadow: 0 4px 10px rgba(15, 23, 42, 0.03); }
+        .feature-box .ic { width: 42px; height: 42px; border-radius: 12px; background: #e8f0fe; color: #2563eb; display: grid; place-items: center; font-size: 18px; margin-bottom: 12px; }
+        .feature-box h3 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+        .feature-box p { font-size: 12.5px; color: var(--muted); }
+        .footer-note { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 500; color: var(--muted); }
+
+        /* ---------- Login card ---------- */
+        .auth { display: flex; flex-direction: column; gap: 20px; width: 100%; max-width: 460px; justify-self: center; }
+        .login-card { background: white; border-radius: 28px; box-shadow: 0 20px 45px rgba(15, 23, 42, 0.09); overflow: hidden; border: 1px solid var(--line); }
+        .card-header { background: linear-gradient(180deg, #eef5ff 0%, #ffffff 100%); padding: 34px 32px 14px; text-align: center; }
+        .lock-icon-bg { background: linear-gradient(135deg, #2563eb, var(--indigo)); width: 60px; height: 60px; border-radius: 18px; display: grid; place-items: center; color: white; font-size: 24px; margin: 0 auto 16px; box-shadow: 0 10px 18px -4px rgba(59, 130, 246, 0.45); }
+        .sec-title { font-size: 11px; font-weight: 700; color: #1e5a8e; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; }
+        .card-header h2 { font-size: clamp(24px, 3.4vw, 30px); font-weight: 800; color: #10294f; letter-spacing: -0.5px; }
+        .card-header p { font-size: 14px; color: var(--muted); margin-top: 8px; }
+
+        .card-body { padding: 24px 32px 30px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #334155; margin-bottom: 8px; letter-spacing: 0.6px; }
+        .form-group label i { color: #1e5a8e; }
+        .form-group input { width: 100%; padding: 14px 16px; border: 1px solid #cbd5e1; border-radius: 14px; font: inherit; font-size: 15px; outline: none; transition: all 0.2s; background: white; }
+        .form-group input:focus { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12); }
+
+        .btn-submit { width: 100%; padding: 16px; background: linear-gradient(90deg, #2a4fd6, var(--indigo)); color: white; border: none; border-radius: 14px; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer; display: flex; justify-content: center; align-items: center; gap: 10px; transition: transform 0.15s, box-shadow 0.2s, opacity 0.2s; box-shadow: 0 8px 16px -4px rgba(59, 130, 246, 0.45); }
+        .btn-submit:hover { box-shadow: 0 10px 20px -4px rgba(59, 130, 246, 0.55); }
+        .btn-submit:active { transform: scale(0.99); }
+        .btn-submit:disabled { opacity: 0.75; cursor: wait; }
+
+        .error-message { color: #dc2626; font-size: 13px; text-align: center; margin-top: 14px; font-weight: 500; display: none; }
+
+        .roster-toggle { margin-top: 26px; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; border-top: 1px solid var(--line); padding-top: 18px; }
+        .roster-toggle .label { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1.2px; }
+        .roster-toggle .chev { width: 40px; height: 40px; border-radius: 12px; border: 1px solid var(--line); display: grid; place-items: center; font-size: 13px; color: #1e3a8a; background: white; transition: all 0.2s; }
+        .roster-toggle:hover .chev { border-color: var(--blue); }
+        .roster-toggle.open .chev { background: var(--indigo); color: white; border-color: var(--indigo); transform: rotate(180deg); }
+
+        /* ---------- Roster ---------- */
+        .roster-card { display: none; background: white; border-radius: 24px; border: 1px solid var(--line); box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08); padding: 20px; animation: rise 0.3s ease; }
+        .roster-card.open { display: block; }
+        @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+        .roster-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+        .roster-nav button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: #f1f5f9; color: #334155; font-size: 14px; cursor: pointer; display: grid; place-items: center; transition: all 0.15s; flex-shrink: 0; }
+        .roster-nav button:hover:not(:disabled) { background: var(--indigo); color: white; border-color: var(--indigo); }
+        .roster-nav button:disabled { opacity: 0.35; cursor: not-allowed; }
+        .roster-title { text-align: center; min-width: 0; }
+        .roster-title h3 { font-size: 20px; font-weight: 800; color: var(--navy); letter-spacing: 0.3px; text-transform: uppercase; }
+        .roster-title small { display: block; font-size: 12px; color: var(--muted); font-weight: 500; }
+
+        .segment-title { font-size: 13px; font-weight: 800; color: var(--indigo); text-transform: uppercase; letter-spacing: 0.5px; margin: 16px 0 8px; }
+        .shift { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; background: white; }
+        .shift img { width: 44px; height: 44px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #e2e8f0; }
+        .shift-main { flex: 1; min-width: 0; }
+        .shift-main strong { display: block; font-size: 15px; font-weight: 700; color: var(--navy); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .shift-main span { display: block; font-size: 12px; color: var(--muted); }
+        .shift-time { font-size: 13px; font-weight: 700; text-align: right; white-space: nowrap; }
+        .shift-time.done { color: #22a06b; }
+        .shift-time.active { color: var(--indigo); }
+        .shift-time.scheduled { color: var(--muted); }
+
+        .roster-msg { text-align: center; color: var(--muted); padding: 26px 8px; font-size: 14px; }
+        .spinner { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--indigo); border-radius: 50%; animation: spin 0.9s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .legal { text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 1.2px; color: #94a3b8; text-transform: uppercase; padding: 24px 20px calc(28px + env(safe-area-inset-bottom)); }
+
+        /* ---------- Responsive ---------- */
+        @media (max-width: 1000px) {
+            .page { grid-template-columns: 1fr; gap: 28px; padding: 32px 18px 12px; }
+            .intro { text-align: center; }
+            .desc { margin-left: auto; margin-right: auto; }
+            .footer-note { justify-content: center; }
+            .auth { max-width: 560px; }
+        }
+        @media (max-width: 640px) {
+            .topbar { padding-top: 10px; padding-bottom: 10px; }
+            .brand-logo { width: 40px; height: 40px; }
+            .brand-text strong { font-size: 17px; }
+            .lang-select { height: 40px; padding-left: 10px; }
+            .lang-select select { font-size: 13px; }
+            .icon-btn { width: 40px; height: 40px; }
+            .features { grid-template-columns: 1fr; gap: 10px; }
+            .feature-box { display: flex; align-items: center; gap: 14px; text-align: left; padding: 14px; }
+            .feature-box .ic { margin-bottom: 0; flex-shrink: 0; }
+            .card-header { padding: 28px 22px 10px; }
+            .card-body { padding: 20px 22px 26px; }
+            .roster-card { padding: 16px; border-radius: 20px; }
+            .form-group input, .lang-select select { font-size: 16px; }   /* stops iOS zoom on focus */
+        }
+        @media (max-width: 380px) {
+            .brand-text small { display: none; }
+        }
+        @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     </style>
 </head>
 <body>
-    <div class="bg-blob"></div>
-    <div class="login-layout">
-        
-        <!-- Left Column -->
-        <div class="left-col">
-            <div class="logo">
-                <i class="fas fa-network-wired"></i>
-                <div>Duna Networks<br><span style="font-size:12px;color:#64748b;font-weight:600;">KFT</span></div>
-            </div>
-            
-            <div class="pill"><div class="dot"></div> DUNA NETWORKS EMPLOYEE PORTAL</div>
-            
-            <h1>Your workday,<br><span class="highlight">connected.</span></h1>
-            
-            <p class="desc">Securely access your schedule, attendance, team communication and operational workspace from one place.</p>
-            
+    <!-- ===== Header ===== -->
+    <header class="topbar">
+        <a class="brand" href="login.html" aria-label="Duna Networks">
+            <span class="brand-logo">
+                <img id="logoImg" src="logo.png" alt="Duna Networks logo">
+                <span class="fallback" id="logoFallback"><i class="fas fa-network-wired"></i></span>
+            </span>
+            <span class="brand-text"><strong>Duna Networks</strong><small>KFT</small></span>
+        </a>
+        <div class="top-actions">
+            <label class="lang-select">
+                <i class="fas fa-language"></i>
+                <select id="langSelect" aria-label="Language">
+                    <option value="en">English</option>
+                    <option value="hu">Magyar</option>
+                    <option value="ko">한국어</option>
+                    <option value="de">Deutsch</option>
+                </select>
+            </label>
+            <a class="icon-btn" id="homeBtn" href="/" data-i18n-title="home" title="Back to homepage"><i class="fas fa-home"></i></a>
+        </div>
+    </header>
+
+    <main class="page">
+        <!-- ===== Intro ===== -->
+        <section class="intro">
+            <div class="pill"><span class="dot"></span><span data-i18n="badge">Duna Networks Employee Portal</span></div>
+            <h1><span data-i18n="hero1">Your workday,</span><span class="highlight" data-i18n="hero2">connected.</span></h1>
+            <p class="desc" data-i18n="desc"></p>
+
             <div class="features">
                 <div class="feature-box">
-                    <i class="far fa-calendar-alt"></i>
-                    <h3>Schedule & Attendance</h3>
-                    <p>Keep your workday information together.</p>
+                    <div class="ic"><i class="far fa-calendar-alt"></i></div>
+                    <div><h3 data-i18n="f1t"></h3><p data-i18n="f1d"></p></div>
                 </div>
                 <div class="feature-box">
-                    <i class="far fa-comment-dots"></i>
-                    <h3>Team Communication</h3>
-                    <p>Stay connected with your colleagues.</p>
+                    <div class="ic"><i class="far fa-comment-dots"></i></div>
+                    <div><h3 data-i18n="f2t"></h3><p data-i18n="f2d"></p></div>
                 </div>
                 <div class="feature-box">
-                    <i class="fas fa-chart-line"></i>
-                    <h3>Operational Workspace</h3>
-                    <p>Access the tools you need securely.</p>
+                    <div class="ic"><i class="fas fa-chart-line"></i></div>
+                    <div><h3 data-i18n="f3t"></h3><p data-i18n="f3d"></p></div>
                 </div>
             </div>
-            
-            <div class="footer-note">
-                <div class="dot"></div> Protected employee access · Duna Networks KFT
-            </div>
-        </div>
-        
-        <!-- Right Column -->
-        <div class="right-col">
-            <div class="top-nav">
-                <div class="nav-btn"><i class="fas fa-language" style="color:#3b82f6;"></i> US English</div>
-                <a href="#" class="nav-btn"><i class="fas fa-home" style="color:#3b82f6;"></i> Back to Homepage</a>
-            </div>
-            
+            <div class="footer-note"><span class="dot"></span><span data-i18n="protected"></span></div>
+        </section>
+
+        <!-- ===== Login + Roster ===== -->
+        <section class="auth">
             <div class="login-card">
                 <div class="card-header">
                     <div class="lock-icon-bg"><i class="fas fa-lock"></i></div>
-                    <div class="sec-title">Secure Access</div>
-                    <h2>Welcome Back</h2>
-                    <p>Sign in to your Duna Networks employee workspace.</p>
+                    <div class="sec-title" data-i18n="secure"></div>
+                    <h2 data-i18n="welcome"></h2>
+                    <p data-i18n="sub"></p>
                 </div>
                 <div class="card-body">
-                    <form id="loginForm">
+                    <form id="loginForm" autocomplete="on">
                         <div class="form-group">
-                            <label><i class="far fa-user"></i> EMPLOYEE PROFILE IDENTITY</label>
-                            <input type="text" id="username" placeholder="Enter your username" required>
-                            <i class="fas fa-id-badge input-icon"></i>
+                            <label for="username"><i class="far fa-user"></i><span data-i18n="userLabel"></span></label>
+                            <input type="text" id="username" autocomplete="username" autocapitalize="none" data-i18n-placeholder="userPh" required>
                         </div>
                         <div class="form-group">
-                            <label><i class="fas fa-shield-alt"></i> SECURE PASSCODE</label>
-                            <input type="password" id="password" placeholder="Enter your password" required>
+                            <label for="password"><i class="fas fa-shield-alt"></i><span data-i18n="passLabel"></span></label>
+                            <input type="password" id="password" autocomplete="current-password" data-i18n-placeholder="passPh" required>
                         </div>
-                        <button type="submit" class="btn-submit" id="submitBtn">
-                            <i class="fas fa-unlock-alt"></i> Unlock Workspace &rarr;
-                        </button>
-                        <p class="error-message" id="errorMessage"></p>
+                        <button type="submit" class="btn-submit" id="submitBtn"></button>
+                        <p class="error-message" id="errorMessage" role="alert"></p>
                     </form>
-                    
-                    <div class="roster-link">
-                        VIEW TODAY'S ROSTER
-                        <i class="fas fa-chevron-down"></i>
+
+                    <div class="roster-toggle" id="rosterToggle" role="button" tabindex="0" aria-expanded="false" aria-controls="rosterCard">
+                        <span class="label" data-i18n="viewRoster"></span>
+                        <span class="chev"><i class="fas fa-chevron-down"></i></span>
                     </div>
                 </div>
             </div>
-        </div>
 
-    </div>
+            <div class="roster-card" id="rosterCard">
+                <div class="roster-nav">
+                    <button type="button" id="prevDay" data-i18n-title="prevDay"><i class="fas fa-chevron-left"></i></button>
+                    <div class="roster-title">
+                        <h3 id="rosterTitle"></h3>
+                        <small id="rosterDate"></small>
+                    </div>
+                    <button type="button" id="nextDay" data-i18n-title="nextDay"><i class="fas fa-chevron-right"></i></button>
+                </div>
+                <div id="rosterBody"></div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="legal" data-i18n="copyright"></footer>
 
     <script>
-    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
-    const BTN_HTML = '<i class="fas fa-unlock-alt"></i> Unlock Workspace &rarr;';
+        // ====================== Config ======================
+        const CONFIG = {
+            SCRIPT_URL: "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec",
+            HOME_URL: "/",            // where the home button goes
+            LOGO_URL: "logo.png",     // put your logo file next to login.html
+            SHOW_NAMES: false,        // roster is visible before login: keep names hidden
+            // Field names tried (in order) when reading shift times from the schedule data
+            START_KEYS: ['start', 'in', 'checkIn', 'from', 'begin'],
+            END_KEYS: ['end', 'out', 'checkOut', 'to', 'finish']
+        };
+        const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const LOCALES = { en: 'en-US', hu: 'hu-HU', ko: 'ko-KR', de: 'de-DE' };
 
-    // Already signed in? Go straight to the app.
-    try {
-        const saved = JSON.parse(localStorage.getItem('duna_user'));
-        if (saved && saved.username) window.location.replace('index.html');
-    } catch (e) { localStorage.removeItem('duna_user'); }
+        // ====================== Translations ======================
+        const I18N = {
+            en: {
+                home: 'Back to homepage', badge: 'Duna Networks Employee Portal',
+                hero1: 'Your workday,', hero2: 'connected.',
+                desc: 'Securely access your schedule, attendance, team communication and operational workspace from one place.',
+                f1t: 'Schedule & Attendance', f1d: 'Keep your workday information together.',
+                f2t: 'Team Communication', f2d: 'Stay connected with your colleagues.',
+                f3t: 'Operational Workspace', f3d: 'Access the tools you need securely.',
+                protected: 'Protected employee access · Duna Networks KFT',
+                secure: 'Secure Access', welcome: 'Welcome Back',
+                sub: 'Sign in to your Duna Networks employee workspace.',
+                userLabel: 'Employee profile identity', userPh: 'Enter your username',
+                passLabel: 'Secure passcode', passPh: 'Enter your password',
+                submit: 'Unlock Workspace', authing: 'Authenticating...',
+                viewRoster: "View today's roster",
+                prevDay: 'Previous day', nextDay: 'Next day',
+                today: 'Today', yesterday: 'Yesterday', tomorrow: 'Tomorrow',
+                rosterLoading: 'Loading roster...', rosterEmpty: 'No shifts scheduled for this day.',
+                rosterError: 'Could not load the roster.',
+                done: 'Done', active: 'Active', scheduled: 'Scheduled', segment: '{x} segment',
+                general: 'General',
+                errInvalid: 'Invalid credentials', errServer: 'Unexpected response from the login server',
+                errFailed: 'Login failed. Check credentials.',
+                copyright: '© 2026 Duna Networks KFT. All rights reserved. · Internal employee portal'
+            },
+            hu: {
+                home: 'Vissza a főoldalra', badge: 'Duna Networks munkavállalói portál',
+                hero1: 'A munkanapod,', hero2: 'összekapcsolva.',
+                desc: 'Biztonságosan érd el a beosztásodat, a jelenléted, a csapatkommunikációt és a működési munkaterületet egy helyen.',
+                f1t: 'Beosztás és jelenlét', f1d: 'A munkanapod adatai egy helyen.',
+                f2t: 'Csapatkommunikáció', f2d: 'Maradj kapcsolatban a kollégáiddal.',
+                f3t: 'Működési munkaterület', f3d: 'Érd el biztonságosan a szükséges eszközöket.',
+                protected: 'Védett munkavállalói hozzáférés · Duna Networks KFT',
+                secure: 'Biztonságos belépés', welcome: 'Üdv újra!',
+                sub: 'Jelentkezz be a Duna Networks munkavállalói felületére.',
+                userLabel: 'Munkavállalói azonosító', userPh: 'Add meg a felhasználónevet',
+                passLabel: 'Biztonsági jelszó', passPh: 'Add meg a jelszót',
+                submit: 'Munkaterület megnyitása', authing: 'Hitelesítés...',
+                viewRoster: 'Mai beosztás megtekintése',
+                prevDay: 'Előző nap', nextDay: 'Következő nap',
+                today: 'Ma', yesterday: 'Tegnap', tomorrow: 'Holnap',
+                rosterLoading: 'Beosztás betöltése...', rosterEmpty: 'Erre a napra nincs beosztás.',
+                rosterError: 'A beosztás nem tölthető be.',
+                done: 'Kész', active: 'Aktív', scheduled: 'Tervezett', segment: '{x} szegmens',
+                general: 'Általános',
+                errInvalid: 'Érvénytelen belépési adatok', errServer: 'Váratlan válasz a bejelentkezési szervertől',
+                errFailed: 'Sikertelen belépés. Ellenőrizd az adatokat.',
+                copyright: '© 2026 Duna Networks KFT. Minden jog fenntartva. · Belső munkavállalói portál'
+            },
+            ko: {
+                home: '홈페이지로 돌아가기', badge: 'Duna Networks 직원 포털',
+                hero1: '당신의 업무일,', hero2: '하나로 연결.',
+                desc: '일정, 출결, 팀 커뮤니케이션, 업무 공간을 한 곳에서 안전하게 이용하세요.',
+                f1t: '일정 및 출결', f1d: '업무 정보를 한곳에 모아보세요.',
+                f2t: '팀 커뮤니케이션', f2d: '동료들과 계속 연결되어 있으세요.',
+                f3t: '업무 공간', f3d: '필요한 도구에 안전하게 접속하세요.',
+                protected: '보호된 직원 전용 접속 · Duna Networks KFT',
+                secure: '보안 접속', welcome: '다시 오신 것을 환영합니다',
+                sub: 'Duna Networks 직원 워크스페이스에 로그인하세요.',
+                userLabel: '직원 프로필 ID', userPh: '사용자 이름을 입력하세요',
+                passLabel: '보안 비밀번호', passPh: '비밀번호를 입력하세요',
+                submit: '워크스페이스 열기', authing: '인증 중...',
+                viewRoster: '오늘 근무표 보기',
+                prevDay: '이전 날', nextDay: '다음 날',
+                today: '오늘', yesterday: '어제', tomorrow: '내일',
+                rosterLoading: '근무표 불러오는 중...', rosterEmpty: '이 날짜에 예정된 근무가 없습니다.',
+                rosterError: '근무표를 불러오지 못했습니다.',
+                done: '완료', active: '근무 중', scheduled: '예정', segment: '{x} 구역',
+                general: '일반',
+                errInvalid: '잘못된 로그인 정보입니다', errServer: '로그인 서버의 응답이 올바르지 않습니다',
+                errFailed: '로그인 실패. 정보를 확인하세요.',
+                copyright: '© 2026 Duna Networks KFT. 모든 권리 보유. · 내부 직원 포털'
+            },
+            de: {
+                home: 'Zurück zur Startseite', badge: 'Duna Networks Mitarbeiterportal',
+                hero1: 'Dein Arbeitstag,', hero2: 'vernetzt.',
+                desc: 'Greife sicher auf Dienstplan, Anwesenheit, Teamkommunikation und Arbeitsbereich an einem Ort zu.',
+                f1t: 'Dienstplan & Anwesenheit', f1d: 'Alle Infos zum Arbeitstag an einem Ort.',
+                f2t: 'Teamkommunikation', f2d: 'Bleib mit deinen Kollegen in Kontakt.',
+                f3t: 'Arbeitsbereich', f3d: 'Greife sicher auf die benötigten Tools zu.',
+                protected: 'Geschützter Mitarbeiterzugang · Duna Networks KFT',
+                secure: 'Sicherer Zugang', welcome: 'Willkommen zurück',
+                sub: 'Melde dich in deinem Duna-Networks-Mitarbeiterbereich an.',
+                userLabel: 'Mitarbeiter-ID', userPh: 'Benutzernamen eingeben',
+                passLabel: 'Sicheres Passwort', passPh: 'Passwort eingeben',
+                submit: 'Arbeitsbereich öffnen', authing: 'Authentifizierung...',
+                viewRoster: 'Heutigen Dienstplan anzeigen',
+                prevDay: 'Vorheriger Tag', nextDay: 'Nächster Tag',
+                today: 'Heute', yesterday: 'Gestern', tomorrow: 'Morgen',
+                rosterLoading: 'Dienstplan wird geladen...', rosterEmpty: 'Für diesen Tag sind keine Schichten geplant.',
+                rosterError: 'Dienstplan konnte nicht geladen werden.',
+                done: 'Beendet', active: 'Aktiv', scheduled: 'Geplant', segment: '{x}-Segment',
+                general: 'Allgemein',
+                errInvalid: 'Ungültige Zugangsdaten', errServer: 'Unerwartete Antwort des Anmeldeservers',
+                errFailed: 'Anmeldung fehlgeschlagen. Zugangsdaten prüfen.',
+                copyright: '© 2026 Duna Networks KFT. Alle Rechte vorbehalten. · Internes Mitarbeiterportal'
+            }
+        };
 
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value.trim();
-        const errorElement = document.getElementById('errorMessage');
-        const btn = document.getElementById('submitBtn');
+        const $ = id => document.getElementById(id);
+        const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Authenticating...';
-        btn.disabled = true;
-        errorElement.style.display = 'none';
+        let lang = (() => {
+            const saved = localStorage.getItem('duna_lang');
+            if (saved && I18N[saved]) return saved;
+            const nav = (navigator.language || 'en').slice(0, 2).toLowerCase();
+            return I18N[nav] ? nav : 'en';
+        })();
+        const t = key => (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
 
-        try {
-            const res = await fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({ action: 'LOGIN', username, password })
-            });
-            if (!res.ok) throw new Error('Server error (' + res.status + ')');
+        // ====================== Language ======================
+        let busy = false;
+        let lastError = null;   // { key } or { text }
 
-            let data;
-            try { data = await res.json(); }
-            catch (err) { throw new Error('Unexpected response from the login server'); }
-            console.log('LOGIN response:', data);
-
-            const ok = data.status === 'success' || data.success === true;
-            if (!ok) throw new Error(data.message || 'Invalid credentials');
-
-            const isAdmin = String(data.role || '').toUpperCase().includes('ADMIN') || username.toUpperCase() === 'ADMIN';
-            localStorage.setItem('duna_user', JSON.stringify({
-                username: data.username || username,
-                role: isAdmin ? 'ADMIN' : 'USER'
-            }));
-            window.location.href = 'index.html';
-        } catch (error) {
-            errorElement.style.display = 'block';
-            errorElement.textContent = error.message || 'Login failed. Check credentials.';
-            btn.innerHTML = BTN_HTML;
-            btn.disabled = false;
+        function setSubmitLabel() {
+            const btn = $('submitBtn');
+            btn.innerHTML = busy
+                ? `<i class="fas fa-spinner fa-spin"></i> ${esc(t('authing'))}`
+                : `<i class="fas fa-unlock-alt"></i> ${esc(t('submit'))} &rarr;`;
         }
-    });
-</script>
 
+        function showError(err) {
+            lastError = err;
+            const el = $('errorMessage');
+            el.textContent = err.key ? t(err.key) : err.text;
+            el.style.display = 'block';
+        }
+        function clearError() {
+            lastError = null;
+            $('errorMessage').style.display = 'none';
+        }
+
+        function applyLang() {
+            document.documentElement.lang = lang;
+            $('langSelect').value = lang;
+            document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+            document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+            document.querySelectorAll('[data-i18n-title]').forEach(el => { el.title = t(el.dataset.i18nTitle); el.setAttribute('aria-label', t(el.dataset.i18nTitle)); });
+            setSubmitLabel();
+            if (lastError) showError(lastError);
+            renderRoster();
+        }
+
+        $('langSelect').addEventListener('change', e => {
+            lang = e.target.value;
+            localStorage.setItem('duna_lang', lang);
+            applyLang();
+        });
+
+        // ====================== Header bits ======================
+        const logo = $('logoImg');
+        logo.src = CONFIG.LOGO_URL;
+        logo.addEventListener('error', () => {
+            logo.style.display = 'none';
+            $('logoFallback').style.display = 'grid';
+        });
+        $('homeBtn').href = CONFIG.HOME_URL;
+
+        // ====================== Roster ======================
+        let rosterData = null;
+        let rosterStatus = 'idle';   // idle | loading | ready | error
+        let dayOffset = 0;           // -1 yesterday, 0 today, +1 tomorrow
+
+        const dateForOffset = o => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + o); return d; };
+
+        function normTime(v) {
+            const m = String(v ?? '').match(/(\d{1,2}):(\d{2})/);
+            return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
+        }
+        function pickTime(entry, keys) {
+            for (const k of keys) { const v = normTime(entry[k]); if (v) return v; }
+            return null;
+        }
+        const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+
+        function shiftStatus(offset, start, end) {
+            if (offset < 0) return 'done';
+            if (offset > 0) return 'scheduled';
+            if (!start) return 'scheduled';
+            const now = new Date();
+            const mins = now.getHours() * 60 + now.getMinutes();
+            const s = toMin(start);
+            if (mins < s) return 'scheduled';
+            if (end) {
+                const e = toMin(end);
+                if (e >= s && mins >= e) return 'done';      // same-day shift already finished
+            }
+            return 'active';                                 // running (or overnight shift in progress)
+        }
+
+        function buildShifts(offset) {
+            if (!rosterData) return [];
+            const schedule = rosterData.schedule || {};
+            const locations = rosterData.employeeLocations || {};
+            const images = rosterData.employeeImages || rosterData.images || {};
+            const d = dateForOffset(offset);
+            const year = String(d.getFullYear());
+            const month = MONTHS[d.getMonth()];
+            const day = d.getDate();
+            const out = [];
+
+            Object.keys(schedule).forEach(name => {
+                const entry = schedule[name]?.[year]?.[month]?.[day];
+                if (!entry || !entry.area) return;
+                const start = pickTime(entry, CONFIG.START_KEYS);
+                const end = pickTime(entry, CONFIG.END_KEYS);
+                const segment = [].concat(locations[name] || [])[0] || t('general');
+                out.push({
+                    name, label: String(entry.area), segment, start, end,
+                    status: shiftStatus(offset, start, end),
+                    img: images[name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff&bold=true`
+                });
+            });
+            return out.sort((a, b) => (a.start || '99:99').localeCompare(b.start || '99:99') || a.label.localeCompare(b.label));
+        }
+
+        function timeText(s) {
+            const range = s.start && s.end ? `${s.start} - ${s.end}` : (s.start || '');
+            if (s.status === 'done') return `${t('done')}${range ? ': ' + range : ''}`;
+            if (s.status === 'active') return `${t('active')}${s.start ? ': ' + s.start : ''}`;
+            return range || t('scheduled');
+        }
+
+        function renderRoster() {
+            const offset = dayOffset;
+            const d = dateForOffset(offset);
+            $('rosterTitle').textContent = offset === 0 ? t('today') : offset < 0 ? t('yesterday') : t('tomorrow');
+            $('rosterDate').textContent = d.toLocaleDateString(LOCALES[lang], { weekday: 'long', month: 'long', day: 'numeric' });
+            $('prevDay').disabled = offset <= -1;
+            $('nextDay').disabled = offset >= 1;
+
+            const body = $('rosterBody');
+            if (rosterStatus === 'loading' || rosterStatus === 'idle') {
+                body.innerHTML = `<div class="roster-msg"><div class="spinner"></div>${esc(t('rosterLoading'))}</div>`;
+                return;
+            }
+            if (rosterStatus === 'error') {
+                body.innerHTML = `<div class="roster-msg">${esc(t('rosterError'))}</div>`;
+                return;
+            }
+
+            const shifts = buildShifts(offset);
+            if (!shifts.length) {
+                body.innerHTML = `<div class="roster-msg">${esc(t('rosterEmpty'))}</div>`;
+                return;
+            }
+
+            const groups = {};
+            shifts.forEach(s => { (groups[s.segment] = groups[s.segment] || []).push(s); });
+
+            body.innerHTML = Object.keys(groups).sort().map(seg => `
+                <div class="segment-title">${esc(t('segment').replace('{x}', seg))}</div>
+                ${groups[seg].map(s => `
+                    <div class="shift">
+                        <img src="${esc(s.img)}" alt="" loading="lazy">
+                        <div class="shift-main">
+                            <strong>${esc(s.label)}</strong>
+                            ${CONFIG.SHOW_NAMES ? `<span>${esc(s.name)}</span>` : ''}
+                        </div>
+                        <div class="shift-time ${s.status}">${esc(timeText(s))}</div>
+                    </div>`).join('')}
+            `).join('');
+        }
+
+        async function loadRoster() {
+            if (rosterData || rosterStatus === 'loading') return;
+            rosterStatus = 'loading';
+            renderRoster();
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                rosterData = await res.json();
+                rosterStatus = 'ready';
+            } catch (err) {
+                console.error('Roster load failed:', err);
+                rosterStatus = 'error';
+            }
+            renderRoster();
+        }
+
+        function toggleRoster() {
+            const toggle = $('rosterToggle');
+            const card = $('rosterCard');
+            const open = !card.classList.contains('open');
+            card.classList.toggle('open', open);
+            toggle.classList.toggle('open', open);
+            toggle.setAttribute('aria-expanded', String(open));
+            if (open) {
+                if (rosterStatus === 'error') { rosterData = null; rosterStatus = 'idle'; }
+                loadRoster();
+                setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+            }
+        }
+
+        $('rosterToggle').addEventListener('click', toggleRoster);
+        $('rosterToggle').addEventListener('keydown', e => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoster(); }
+        });
+        $('prevDay').addEventListener('click', () => { if (dayOffset > -1) { dayOffset--; renderRoster(); } });
+        $('nextDay').addEventListener('click', () => { if (dayOffset < 1) { dayOffset++; renderRoster(); } });
+
+        // ====================== Login ======================
+        try {
+            const saved = JSON.parse(localStorage.getItem('duna_user'));
+            if (saved && saved.username) window.location.replace('index.html');
+        } catch (e) { localStorage.removeItem('duna_user'); }
+
+        $('loginForm').addEventListener('submit', async e => {
+            e.preventDefault();
+            const username = $('username').value.trim();
+            const password = $('password').value.trim();
+
+            busy = true;
+            $('submitBtn').disabled = true;
+            setSubmitLabel();
+            clearError();
+
+            try {
+                const res = await fetch(CONFIG.SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({ action: 'LOGIN', username, password })
+                });
+                if (!res.ok) throw { text: 'Server error (' + res.status + ')' };
+
+                let data;
+                try { data = await res.json(); }
+                catch (err) { throw { key: 'errServer' }; }
+
+                const ok = data.status === 'success' || data.success === true;
+                if (!ok) throw data.message ? { text: data.message } : { key: 'errInvalid' };
+
+                const isAdmin = String(data.role || '').toUpperCase().includes('ADMIN') || username.toUpperCase() === 'ADMIN';
+                localStorage.setItem('duna_user', JSON.stringify({
+                    username: data.username || username,
+                    role: isAdmin ? 'ADMIN' : 'USER'
+                }));
+                window.location.href = 'index.html';
+            } catch (err) {
+                showError(err && (err.key || err.text) ? err : { key: 'errFailed' });
+                busy = false;
+                $('submitBtn').disabled = false;
+                setSubmitLabel();
+            }
+        });
+
+        // ====================== Start ======================
+        applyLang();
+    </script>
 </body>
 </html>
