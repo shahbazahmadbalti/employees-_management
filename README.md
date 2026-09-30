@@ -83,3 +83,5 @@ A comprehensive, responsive web application for managing employees, departments,
    ```bash
    git clone https://github.com/your-username/employee-management-system.git
    cd employee-management-system
+
+Deploy trigger update
