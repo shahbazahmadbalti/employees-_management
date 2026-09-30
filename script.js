@@ -110,16 +110,6 @@ async function initializeData() {
         state.performance = performance;
         state.payroll = payroll;
         state.leave = leave;
-
-        // Render based on role
-        if (state.currentUser.role === 'admin') {
-            renderDashboard();
-            renderEmployees();
-            renderDepartments();
-            renderPerformance();
-            renderPayroll();
-            updateDropdowns();
-        }
         
         renderAttendance();
         renderLeave();
@@ -142,6 +132,23 @@ async function fetchSchedule() {
         state.schedule = data.schedule || {};
         state.masterEmployees = data.employees || [];
         state.employeeLocations = data.employeeLocations || {};
+        
+        // Dynamically update role if they are an admin in the database
+        const roleFromDb = data.employeeRoles?.[state.currentUser.name] || '';
+        if (roleFromDb.toLowerCase().includes('admin')) {
+            state.currentUser.role = 'admin';
+            document.body.className = 'role-admin';
+        }
+        
+        // Render based on role
+        if (state.currentUser.role === 'admin') {
+            renderDashboard();
+            renderEmployees();
+            renderDepartments();
+            renderPerformance();
+            renderPayroll();
+            updateDropdowns();
+        }
         
         renderSchedule();
     } catch (err) {
