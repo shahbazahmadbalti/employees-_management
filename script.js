@@ -22,7 +22,7 @@ const auth = getAuth(app);
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
 
 // ==================== Config ====================
-const AUTH_EMAIL_DOMAIN = 'employees.duna-networks.app';   // must match login.html
+const AUTH_EMAIL_DOMAIN = 'dunanetworks.com';   // must match login.html
 const ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const CURRENCY = 'USD';
 const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
