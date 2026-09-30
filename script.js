@@ -16,6 +16,23 @@ const db = getDatabase(app);
 
 const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRkhKOqjNWr1kl1nO3IE6uJ6rfTOWfxxabS5okAQtPxPvk0dwRlB30Og_ez_jqKm/exec";
 
+// ==================== Config ====================
+const CURRENCY = 'USD';                       // change to 'HUF' / 'EUR' if needed
+const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
+const PAYROLL_RULES = { allowanceRate: 0.10, deductionRate: 0.08 };
+const SCHEDULE_COLORS = {
+    FA: ['#bfdbfe', '#1e40af'],
+    P2: ['#bbf7d0', '#166534'],
+    AD: ['#fed7aa', '#9a3412'],
+    DEFAULT: ['#c7d2fe', '#3730a3']
+};
+const PAGE_TITLES = {
+    dashboard: 'Dashboard', schedule: 'Schedule', employees: 'Employees', departments: 'Departments',
+    attendance: 'Attendance', performance: 'Performance', payroll: 'Payroll',
+    leave: 'Leave Management', reports: 'Reports', settings: 'Settings'
+};
+
 const state = {
     employees: [],
     departments: [],
@@ -23,574 +40,598 @@ const state = {
     performance: [],
     payroll: [],
     leave: [],
+    profiles: [],
     schedule: {},
     masterEmployees: [],
-    currentUser: {
-        id: null,
-        name: 'User',
-        role: 'employee'
-    }
+    employeeLocations: {},
+    currentUser: { id: null, name: 'User', role: 'employee' }
 };
+const ui = { searchQuery: '' };
+const charts = {};
+
+// ==================== Small helpers ====================
+const $ = id => document.getElementById(id);
+const on = (id, evt, fn) => { const el = $(id); if (el) el.addEventListener(evt, fn); };
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const avatar = (name, bg = '4F46E5') => `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=${bg}&color=fff`;
+const isAdmin = () => state.currentUser.role === 'admin';
+const fullNameOf = e => `${e.firstName || ''} ${e.lastName || ''}`.trim();
+const profileKey = name => encodeURIComponent(name).replace(/\./g, '%2E');
+const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const findEmployee = id => state.employees.find(e => String(e.id) === String(id));
 
 // ==================== Firebase API Wrapper ====================
 async function api(endpoint, method = 'GET', body = null) {
-    let [path, query] = endpoint.split('?');
+    const [path] = endpoint.split('?');
     const pathParts = path.split('/').filter(Boolean);
     const collection = pathParts[0];
     const id = pathParts[1];
-    
     const dbRef = ref(db);
-    
+    const clean = body ? JSON.parse(JSON.stringify(body)) : null; // strips undefined
+
     if (method === 'GET') {
         if (id) {
             const snapshot = await get(child(dbRef, `${collection}/${id}`));
             if (!snapshot.exists()) throw new Error('Not found');
             return { id, ...snapshot.val() };
-        } else {
-            const snapshot = await get(child(dbRef, collection));
-            if (!snapshot.exists()) return [];
-            const data = snapshot.val();
-            return Object.keys(data).map(key => ({ id: key, ...data[key] }));
         }
-    } else if (method === 'POST') {
+        const snapshot = await get(child(dbRef, collection));
+        if (!snapshot.exists()) return [];
+        const data = snapshot.val();
+        return Object.keys(data).map(key => ({ ...data[key], id: key }));
+    }
+    if (method === 'POST') {
         const newRef = push(child(dbRef, collection));
-        await set(newRef, body);
-        return { id: newRef.key, ...body };
-    } else if (method === 'PUT') {
-        const itemRef = child(dbRef, `${collection}/${id}`);
-        await update(itemRef, body);
-        return { id, ...body };
-    } else if (method === 'DELETE') {
-        const itemRef = child(dbRef, `${collection}/${id}`);
-        await remove(itemRef);
+        await set(newRef, clean);
+        return { ...clean, id: newRef.key };
+    }
+    if (method === 'PUT') {
+        await update(child(dbRef, `${collection}/${id}`), clean);
+        const snapshot = await get(child(dbRef, `${collection}/${id}`));
+        return { ...snapshot.val(), id };
+    }
+    if (method === 'DELETE') {
+        await remove(child(dbRef, `${collection}/${id}`));
         return { success: true };
     }
 }
 
 // ==================== Initialization ====================
-document.addEventListener('DOMContentLoaded', function() {
-    // Custom Auth using localStorage
-    const storedUser = localStorage.getItem('duna_user');
-    
-    if (storedUser) {
-        const user = JSON.parse(storedUser);
-        document.getElementById('currentUserEmail').textContent = user.username;
-        
-        const role = user.role === 'ADMIN' ? 'admin' : 'employee';
-        document.body.className = `role-${role}`;
-        state.currentUser.name = user.username;
-        state.currentUser.role = role;
-        
-        initializeData();
-        setupEventListeners();
-    } else {
-        window.location.href = '/login.html';
+function boot() {
+    let user = null;
+    try { user = JSON.parse(localStorage.getItem('duna_user')); } catch (e) { /* ignore */ }
+
+    if (!user || !user.username) {
+        window.location.href = 'login.html';
+        return;
     }
 
-    document.getElementById('logoutBtn').addEventListener('click', () => {
+    $('currentUserEmail').textContent = user.username;
+    $('headerAvatar').src = avatar(user.username);
+    state.currentUser.name = user.username;
+    state.currentUser.id = user.id || null;
+    state.currentUser.role = String(user.role).toUpperCase() === 'ADMIN' ? 'admin' : 'employee';
+    applyRole();
+
+    on('logoutBtn', 'click', () => {
         localStorage.removeItem('duna_user');
-        window.location.href = '/login.html';
+        window.location.href = 'login.html';
     });
-});
 
-async function initializeData() {
-    try {
-        const [employees, departments, attendance, performance, payroll, leave] = await Promise.all([
-            api('/employees'),
-            api('/departments'),
-            api('/attendance'),
-            api('/performance'),
-            api('/payroll'),
-            api('/leave')
-        ]);
+    const now = new Date();
+    $('attendanceDate').value = todayStr();
+    $('schedMonth').value = MONTHS[now.getMonth()];
+    $('schedYear').value = String(now.getFullYear());
 
-        state.employees = employees;
-        state.departments = departments;
-        state.attendance = attendance;
-        state.performance = performance;
-        state.payroll = payroll;
-        state.leave = leave;
-        
-        renderAttendance();
-        renderLeave();
-        fetchSchedule();
-        
-    } catch (err) {
-        console.error('Failed to load data:', err);
-        showToast('Failed to load data from server', 'error');
-    }
+    setupEventListeners();
+    loadSettings();
+    initializeData();
 }
 
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+
+function applyRole() {
+    document.body.className = `role-${state.currentUser.role}`;
+    document.querySelectorAll('.admin-only').forEach(el => {
+        el.style.display = isAdmin() ? '' : 'none';
+    });
+}
+
+async function initializeData() {
+    const load = async name => {
+        try { return await api(`/${name}`); }
+        catch (err) { console.error(`Failed to load ${name}:`, err); return []; }
+    };
+
+    const [employees, departments, attendance, performance, payroll, leave, profiles] = await Promise.all(
+        ['employees', 'departments', 'attendance', 'performance', 'payroll', 'leave', 'profile_extensions'].map(load)
+    );
+
+    Object.assign(state, { employees, departments, attendance, performance, payroll, leave, profiles });
+    renderAll();
+    fetchSchedule();
+}
+
+function renderAll() {
+    updateDropdowns();
+    renderAttendance();
+    renderLeave();
+    if (isAdmin()) {
+        renderDashboard();
+        renderEmployees();
+        renderDepartments();
+        renderPerformance();
+        renderPayroll();
+        renderUsers();
+    }
+    updateNotifications();
+}
+
+// ==================== Schedule (Google Sheets) ====================
 async function fetchSchedule() {
+    const loading = $('scheduleLoading');
+    const table = $('scheduleTable');
     try {
-        document.getElementById('scheduleLoading').style.display = 'block';
-        document.getElementById('scheduleTable').style.display = 'none';
-        
+        loading.style.display = 'block';
+        loading.textContent = 'Loading schedule data from Google Sheets...';
+        table.style.display = 'none';
+
         const response = await fetch(GOOGLE_SCRIPT_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
-        
+
         state.schedule = data.schedule || {};
         state.masterEmployees = data.employees || [];
         state.employeeLocations = data.employeeLocations || {};
-        
-        // Dynamically update role if they are an admin in the database
-        const roleFromDb = data.employeeRoles?.[state.currentUser.name] || '';
-        if (roleFromDb.toLowerCase().includes('admin')) {
+
+        const roleFromDb = Object.entries(data.employeeRoles || {})
+            .find(([name]) => sameName(name, state.currentUser.name))?.[1] || '';
+        if (String(roleFromDb).toLowerCase().includes('admin') && !isAdmin()) {
             state.currentUser.role = 'admin';
-            document.body.className = 'role-admin';
+            applyRole();
+            renderAll();
         }
-        
-        // Render based on role
-        if (state.currentUser.role === 'admin') {
-            renderDashboard();
-            renderEmployees();
-            renderDepartments();
-            renderPerformance();
-            renderPayroll();
-            updateDropdowns();
-        }
-        
+
+        populateScheduleFilters();
         renderSchedule();
     } catch (err) {
         console.error('Failed to fetch schedule', err);
-        document.getElementById('scheduleLoading').textContent = 'Failed to load schedule';
+        loading.style.display = 'block';
+        loading.textContent = 'Failed to load schedule. Click "Refresh Schedule" to retry.';
     }
 }
 
+function populateScheduleFilters() {
+    const locSel = $('schedLocation');
+    const empSel = $('schedEmployee');
+    const prevLoc = locSel.value || 'All';
+    const prevEmp = empSel.value || 'All';
+
+    const locations = [...new Set(Object.values(state.employeeLocations || {}).flat().filter(Boolean))].sort();
+    let names = (state.masterEmployees || []).map(e => (typeof e === 'string' ? e : e?.name)).filter(Boolean);
+    if (!names.length) names = Object.keys(state.schedule);
+    names = [...new Set(names)].sort();
+    if (!isAdmin()) names = names.filter(n => sameName(n, state.currentUser.name));
+
+    locSel.innerHTML = '<option value="All">All</option>' + locations.map(l => `<option value="${esc(l)}">${esc(l)}</option>`).join('');
+    empSel.innerHTML = '<option value="All">All</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    locSel.value = locations.includes(prevLoc) ? prevLoc : 'All';
+    empSel.value = names.includes(prevEmp) ? prevEmp : 'All';
+}
+
 function renderSchedule() {
-    document.getElementById('scheduleLoading').style.display = 'none';
-    document.getElementById('scheduleTable').style.display = 'table';
-    
-    const tbody = document.getElementById('scheduleBody');
-    const theadRow = document.getElementById('scheduleHead').querySelector('tr');
-    
-    const selMonth = document.getElementById('schedMonth').value; // e.g. OCT
-    const selYear = document.getElementById('schedYear').value;   // e.g. 2026
-    
-    // Generate days 1 to 31
-    let headersHTML = '<th style="position: sticky; left: 0; background: #f8fafc; z-index: 2; width: 150px; text-align: left;">EMPLOYEE NAME</th>';
-    for (let i = 1; i <= 31; i++) headersHTML += `<th style="text-align: center;">${i}</th>`;
-    headersHTML += '<th style="text-align: center; width: 80px;">TOTAL HOURS</th>';
-    theadRow.innerHTML = headersHTML;
-    
-    const employees = Object.keys(state.schedule);
-    if (!employees.length) {
-        tbody.innerHTML = '<tr><td colspan="33" style="text-align: center;">No schedule data available</td></tr>';
+    $('scheduleLoading').style.display = 'none';
+    $('scheduleTable').style.display = 'table';
+
+    const tbody = $('scheduleBody');
+    const theadRow = $('scheduleHead').querySelector('tr');
+    const selMonth = $('schedMonth').value;
+    const selYear = $('schedYear').value;
+    const selLoc = $('schedLocation').value;
+    const selEmp = $('schedEmployee').value;
+    const daysInMonth = new Date(Number(selYear), MONTHS.indexOf(selMonth) + 1, 0).getDate();
+
+    let headers = '<th style="position: sticky; left: 0; background: #f8fafc; z-index: 2; width: 150px; text-align: left;">EMPLOYEE NAME</th>';
+    for (let i = 1; i <= daysInMonth; i++) headers += `<th style="text-align: center;">${i}</th>`;
+    headers += '<th style="text-align: center; width: 80px;">TOTAL HOURS</th>';
+    theadRow.innerHTML = headers;
+
+    let names = Object.keys(state.schedule || {});
+    if (!isAdmin()) names = names.filter(n => sameName(n, state.currentUser.name));
+    if (selEmp !== 'All') names = names.filter(n => n === selEmp);
+    if (selLoc !== 'All') {
+        names = names.filter(n => [].concat(state.employeeLocations?.[n] || []).includes(selLoc));
+    }
+
+    if (!names.length) {
+        tbody.innerHTML = `<tr><td colspan="${daysInMonth + 2}" style="text-align: center; padding: 16px;">No schedule data available</td></tr>`;
         return;
     }
-    
-    tbody.innerHTML = employees.map(empName => {
+
+    tbody.innerHTML = names.map(name => {
         let totalHrs = 0;
-        let daysHtml = '';
-        const empSchedule = state.schedule[empName]?.[selYear]?.[selMonth] || {};
-        
-        for (let i = 1; i <= 31; i++) {
-            const dayData = empSchedule[i];
-            if (dayData && dayData.area) {
-                // e.g. "SK/SDI" or "FA 2 (N)"
-                const label = dayData.area;
-                let colorClass = 'bg-yellow-200 text-yellow-800'; 
-                if (label.includes('FA')) colorClass = 'bg-blue-200 text-blue-800';
-                else if (label.includes('P2')) colorClass = 'bg-green-200 text-green-800';
-                else if (label.includes('AD')) colorClass = 'bg-orange-200 text-orange-800';
-                else colorClass = 'bg-indigo-200 text-indigo-800';
-                
-                daysHtml += `<td style="padding: 2px;"><div style="font-size: 10px; font-weight: bold; border-radius: 4px; padding: 4px; text-align: center; white-space: nowrap;" class="${colorClass}">${label}</div></td>`;
-                totalHrs += 8; // dummy calculation
+        let cells = '';
+        const empSchedule = state.schedule[name]?.[selYear]?.[selMonth] || {};
+
+        for (let i = 1; i <= daysInMonth; i++) {
+            const d = empSchedule[i];
+            if (d && d.area) {
+                const label = String(d.area);
+                const [bg, fg] = label.includes('FA') ? SCHEDULE_COLORS.FA
+                    : label.includes('P2') ? SCHEDULE_COLORS.P2
+                    : label.includes('AD') ? SCHEDULE_COLORS.AD
+                    : SCHEDULE_COLORS.DEFAULT;
+                cells += `<td style="padding: 2px;"><div style="font-size: 10px; font-weight: bold; border-radius: 4px; padding: 4px; text-align: center; white-space: nowrap; background: ${bg}; color: ${fg};">${esc(label)}</div></td>`;
+                totalHrs += Number(d.hours) > 0 ? Number(d.hours) : 8;
             } else {
-                daysHtml += '<td></td>';
+                cells += '<td></td>';
             }
         }
-        
+
         return `
             <tr>
-                <td style="position: sticky; left: 0; background: white; z-index: 1; font-weight: 500; text-transform: uppercase;">${empName}</td>
-                ${daysHtml}
+                <td style="position: sticky; left: 0; background: white; z-index: 1; font-weight: 500; text-transform: uppercase;">${esc(name)}</td>
+                ${cells}
                 <td style="text-align: center; font-weight: bold;">${totalHrs || '-'}</td>
-            </tr>
-        `;
+            </tr>`;
     }).join('');
 }
 
 // ==================== Event Listeners ====================
 function setupEventListeners() {
-    // Menu Navigation
     document.querySelectorAll('.menu li').forEach(item => {
-        item.addEventListener('click', function(e) {
+        item.addEventListener('click', e => {
             e.preventDefault();
-            const section = this.dataset.section;
-            showSection(section);
+            showSection(item.dataset.section);
         });
     });
 
-    // Mobile Menu Toggle
-    document.getElementById('menuToggle').addEventListener('click', function() {
-        document.querySelector('.sidebar').classList.toggle('active');
+    on('menuToggle', 'click', () => document.querySelector('.sidebar').classList.toggle('active'));
+
+    on('addEmployeeBtn', 'click', () => openEmployeeModal());
+    on('addDepartmentBtn', 'click', () => openDepartmentModal());
+    on('markAttendanceBtn', 'click', () => openAttendanceModal());
+    on('addReviewBtn', 'click', () => openReviewModal());
+    on('requestLeaveBtn', 'click', () => openLeaveModal());
+    on('generatePayrollBtn', 'click', generatePayroll);
+    on('refreshScheduleBtn', 'click', fetchSchedule);
+
+    on('employeeForm', 'submit', e => { e.preventDefault(); saveEmployee(); });
+    on('departmentForm', 'submit', e => { e.preventDefault(); saveDepartment(); });
+    on('attendanceForm', 'submit', e => { e.preventDefault(); saveAttendance(); });
+    on('leaveForm', 'submit', e => { e.preventDefault(); saveLeave(); });
+    on('reviewForm', 'submit', e => { e.preventDefault(); saveReview(); });
+    on('companySettingsForm', 'submit', e => { e.preventDefault(); saveSettings(); });
+
+    on('selectAll', 'change', function () {
+        document.querySelectorAll('#employeesTable tbody input[type="checkbox"]').forEach(cb => { cb.checked = this.checked; });
     });
 
-    // Add Employee Button
-    document.getElementById('addEmployeeBtn').addEventListener('click', function() {
-        openEmployeeModal();
+    on('departmentFilter', 'change', renderEmployees);
+    on('statusFilter', 'change', renderEmployees);
+    on('globalSearch', 'input', handleGlobalSearch);
+    on('departmentSearch', 'input', renderDepartments);
+
+    on('attendanceDate', 'change', renderAttendance);
+    on('attendancePeriod', 'change', renderAttendanceChart);
+    on('performancePeriod', 'change', renderPerformance);
+    on('performanceDepartment', 'change', renderPerformance);
+    on('payrollMonth', 'change', renderPayroll);
+    on('payrollDepartment', 'change', renderPayroll);
+    on('leaveStatus', 'change', renderLeave);
+    on('leaveType', 'change', renderLeave);
+
+    ['schedMonth', 'schedYear', 'schedLocation', 'schedEmployee'].forEach(id => on(id, 'change', renderSchedule));
+
+    on('notifications', 'click', () => {
+        const pending = state.leave.filter(l => l.status === 'pending').length;
+        showToast(`${pending} pending leave request(s)`, 'info');
     });
 
-    // Add Department Button
-    document.getElementById('addDepartmentBtn').addEventListener('click', function() {
-        openDepartmentModal();
+    on('exportDataBtn', 'click', exportData);
+    on('backupDataBtn', 'click', exportData);
+    on('clearCacheBtn', 'click', () => {
+        localStorage.removeItem('ems_settings');
+        showToast('Cache cleared. Reloading data...', 'success');
+        initializeData();
     });
 
-    // Employee Form Submit
-    document.getElementById('employeeForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        saveEmployee();
-    });
-
-    // Department Form Submit
-    document.getElementById('departmentForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        saveDepartment();
-    });
-
-    // Select All Checkbox
-    document.getElementById('selectAll').addEventListener('change', function() {
-        const checkboxes = document.querySelectorAll('#employeesTable tbody input[type="checkbox"]');
-        checkboxes.forEach(cb => cb.checked = this.checked);
-    });
-
-    // Filters
-    document.getElementById('departmentFilter').addEventListener('change', renderEmployees);
-    document.getElementById('statusFilter').addEventListener('change', renderEmployees);
-    document.getElementById('globalSearch').addEventListener('input', handleGlobalSearch);
-
-    // Attendance Date
-    document.getElementById('attendanceDate').addEventListener('change', renderAttendance);
-
-    // Mark Attendance Button
-    document.getElementById('markAttendanceBtn').addEventListener('click', function() {
-        showToast('Attendance marked successfully!', 'success');
-    });
-
-    // Add Review Button
-    document.getElementById('addReviewBtn').addEventListener('click', function() {
-        showToast('Performance review form opened', 'success');
-    });
-
-    // Generate Payroll Button
-    document.getElementById('generatePayrollBtn').addEventListener('click', function() {
-        showToast('Payroll generated successfully!', 'success');
-    });
-
-    // Request Leave Button
-    document.getElementById('requestLeaveBtn').addEventListener('click', function() {
-        showToast('Leave request form opened', 'success');
-    });
-
-    // Refresh Schedule Button
-    const refreshScheduleBtn = document.getElementById('refreshScheduleBtn');
-    if (refreshScheduleBtn) {
-        refreshScheduleBtn.addEventListener('click', function() {
-            fetchSchedule();
-        });
-    }
-
-    const schedMonth = document.getElementById('schedMonth');
-    const schedYear = document.getElementById('schedYear');
-    if (schedMonth) schedMonth.addEventListener('change', renderSchedule);
-    if (schedYear) schedYear.addEventListener('change', renderSchedule);
-
-    // Company Settings Form
-    document.getElementById('companySettingsForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        showToast('Settings saved successfully!', 'success');
-    });
-
-    // Close modal on outside click
     document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', function(e) {
-            if (e.target === this) {
-                this.classList.remove('active');
-            }
-        });
+        modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
+    });
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') document.querySelectorAll('.modal.active').forEach(m => m.classList.remove('active'));
     });
 }
 
 // ==================== Navigation ====================
 function showSection(sectionId) {
-    // Update menu active state
+    const menuItem = document.querySelector(`.menu li[data-section="${sectionId}"]`);
+    if (menuItem?.classList.contains('admin-only') && !isAdmin()) {
+        showToast('You do not have access to this page', 'error');
+        return;
+    }
+    const section = $(sectionId);
+    if (!section) return;
+
     document.querySelectorAll('.menu li').forEach(item => {
-        item.classList.remove('active');
-        if (item.dataset.section === sectionId) {
-            item.classList.add('active');
-        }
+        item.classList.toggle('active', item.dataset.section === sectionId);
     });
-
-    // Update page title
-    const titles = {
-        dashboard: 'Dashboard',
-        employees: 'Employees',
-        departments: 'Departments',
-        attendance: 'Attendance',
-        performance: 'Performance',
-        payroll: 'Payroll',
-        leave: 'Leave Management',
-        reports: 'Reports',
-        settings: 'Settings'
-    };
-    document.getElementById('pageTitle').textContent = titles[sectionId] || 'Dashboard';
-
-    // Show section
-    document.querySelectorAll('.content-section').forEach(section => {
-        section.classList.remove('active');
-    });
-    document.getElementById(sectionId).classList.add('active');
-
-    // Close mobile menu
+    $('pageTitle').textContent = PAGE_TITLES[sectionId] || 'Dashboard';
+    document.querySelectorAll('.content-section').forEach(s => s.classList.remove('active'));
+    section.classList.add('active');
     document.querySelector('.sidebar').classList.remove('active');
+
+    if (sectionId === 'dashboard' && isAdmin()) renderAttendanceChart();
+    if (sectionId === 'performance') renderPerformance();
 }
 
-// ==================== Modal Functions ====================
+// ==================== Modals ====================
+function closeModal(modalId) {
+    $(modalId).classList.remove('active');
+}
+
 async function openEmployeeModal(employee = null) {
-    const modal = document.getElementById('employeeModal');
-    const title = document.getElementById('employeeModalTitle');
-    const form = document.getElementById('employeeForm');
+    const modal = $('employeeModal');
+    const form = $('employeeForm');
+    const F = form.elements;
+    updateDropdowns();
 
     if (employee) {
-        title.textContent = 'Edit Employee';
+        $('employeeModalTitle').textContent = 'Edit Employee';
         form.dataset.editId = employee.id;
-        form.firstName.value = employee.firstName;
-        form.lastName.value = employee.lastName;
-        form.email.value = employee.email;
-        form.phone.value = employee.phone;
-        form.department.value = employee.department;
-        form.position.value = employee.position;
-        form.employeeId.value = employee.employeeId;
-        form.joinDate.value = employee.joinDate;
-        form.employmentType.value = employee.employmentType;
-        form.salary.value = employee.salary;
-        form.address.value = employee.address;
-        form.status.value = employee.status;
+        form.dataset.oldName = fullNameOf(employee);
+        F.firstName.value = employee.firstName || '';
+        F.lastName.value = employee.lastName || '';
+        F.email.value = employee.email || '';
+        F.phone.value = employee.phone || '';
+        F.department.value = employee.department || '';
+        F.position.value = employee.position || '';
+        F.employeeId.value = employee.employeeId || '';
+        F.joinDate.value = employee.joinDate || '';
+        F.employmentType.value = employee.employmentType || 'full-time';
+        F.salary.value = employee.salary ?? '';
+        F.address.value = employee.address || '';
+        F.status.value = employee.status || 'active';
 
         try {
-            const fullName = `${employee.firstName} ${employee.lastName}`;
-            const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
-            const profile = await api(`/profile_extensions/${safeKey}`);
-            
-            if(form.password) form.password.value = profile.password || '';
-            if(form.role) form.role.value = profile.role || 'USER';
-            if(form.location) form.location.value = profile.location || 'General';
-            if(form.logType) form.logType.value = profile.logType || 'Logs';
-            if(form.bio) form.bio.value = profile.bio || '';
-        } catch(e) {
-            console.log("No profile extension found for this user");
+            const profile = await api(`/profile_extensions/${profileKey(fullNameOf(employee))}`);
+            F.password.value = profile.password || '';
+            F.role.value = profile.role || 'USER';
+            F.location.value = profile.location || 'General';
+            F.logType.value = profile.logType || 'Logs';
+            F.bio.value = profile.bio || '';
+        } catch (e) {
+            console.log('No profile extension found for this user');
         }
     } else {
-        title.textContent = 'Add New Employee';
+        $('employeeModalTitle').textContent = 'Add New Employee';
         delete form.dataset.editId;
+        delete form.dataset.oldName;
         form.reset();
     }
-
     modal.classList.add('active');
 }
 
 function openDepartmentModal(department = null) {
-    const modal = document.getElementById('departmentModal');
-    const title = document.getElementById('departmentModalTitle');
-    const form = document.getElementById('departmentForm');
+    const form = $('departmentForm');
+    const F = form.elements;
+    updateDropdowns();
 
     if (department) {
-        title.textContent = 'Edit Department';
+        $('departmentModalTitle').textContent = 'Edit Department';
         form.dataset.editId = department.id;
-        form.name.value = department.name;
-        form.code.value = department.code;
-        form.head.value = department.head;
-        form.description.value = department.description;
-        form.budget.value = department.budget;
+        F.name.value = department.name || '';
+        F.code.value = department.code || '';
+        F.head.value = department.head || '';
+        F.description.value = department.description || '';
+        F.budget.value = department.budget ?? '';
     } else {
-        title.textContent = 'Add New Department';
+        $('departmentModalTitle').textContent = 'Add New Department';
         delete form.dataset.editId;
         form.reset();
     }
-
-    modal.classList.add('active');
-}
-
-function closeModal(modalId) {
-    document.getElementById(modalId).classList.remove('active');
+    $('departmentModal').classList.add('active');
 }
 
 function openEmployeeDetails(employee) {
-    const modal = document.getElementById('employeeDetailsModal');
-    
-    document.getElementById('detailImage').src = `https://ui-avatars.com/api/?name=${employee.firstName}+${employee.lastName}&background=4F46E5&color=fff`;
-    document.getElementById('detailName').textContent = `${employee.firstName} ${employee.lastName}`;
-    document.getElementById('detailPosition').textContent = employee.position;
-    document.getElementById('detailDepartment').textContent = employee.department;
-    document.getElementById('detailEmail').textContent = employee.email;
-    document.getElementById('detailPhone').textContent = employee.phone || 'N/A';
-    document.getElementById('detailId').textContent = employee.employeeId;
-    document.getElementById('detailJoinDate').textContent = formatDate(employee.joinDate);
-    document.getElementById('detailType').textContent = formatEmploymentType(employee.employmentType);
-    document.getElementById('detailSalary').textContent = formatCurrency(employee.salary);
-    document.getElementById('detailAddress').textContent = employee.address || 'N/A';
-    document.getElementById('detailStatus').innerHTML = `<span class="status-badge ${employee.status}">${employee.status}</span>`;
-
-    modal.classList.add('active');
+    const name = fullNameOf(employee);
+    $('detailImage').src = avatar(name);
+    $('detailName').textContent = name;
+    $('detailPosition').textContent = employee.position || '';
+    $('detailDepartment').textContent = employee.department || '';
+    $('detailEmail').textContent = employee.email || 'N/A';
+    $('detailPhone').textContent = employee.phone || 'N/A';
+    $('detailId').textContent = employee.employeeId || 'N/A';
+    $('detailJoinDate').textContent = formatDate(employee.joinDate);
+    $('detailType').textContent = formatEmploymentType(employee.employmentType);
+    $('detailSalary').textContent = formatCurrency(employee.salary);
+    $('detailAddress').textContent = employee.address || 'N/A';
+    $('detailStatus').innerHTML = `<span class="status-badge ${esc(employee.status)}">${esc(employee.status)}</span>`;
+    $('employeeDetailsModal').classList.add('active');
 }
 
 // ==================== Dashboard ====================
 function renderDashboard() {
-    // Update stats
-    document.getElementById('totalEmployees').textContent = state.employees.length;
-    document.getElementById('presentToday').textContent = state.attendance.filter(a => a.status === 'present').length;
-    document.getElementById('onLeave').textContent = state.leave.filter(l => l.status === 'approved').length;
-    document.getElementById('totalDepartments').textContent = state.departments.length;
+    const today = todayStr();
+    const todays = state.attendance.filter(a => !a.date || a.date === today);
+    const present = todays.filter(a => a.status === 'present' || a.status === 'late').length;
+    const active = state.employees.filter(e => e.status === 'active').length;
 
-    // Recent employees table
-    const recentEmployees = state.employees.slice(0, 5);
-    const tbody = document.querySelector('#recentEmployeesTable tbody');
-    tbody.innerHTML = recentEmployees.map(emp => `
+    $('totalEmployees').textContent = state.employees.length;
+    $('activeEmployeesInfo').textContent = `${active} active`;
+    $('presentToday').textContent = present;
+    $('attendanceRate').textContent = `${state.employees.length ? Math.round((present / state.employees.length) * 100) : 0}% attendance`;
+    $('onLeave').textContent = state.leave.filter(l => l.status === 'approved' && l.fromDate <= today && l.toDate >= today).length;
+    $('pendingLeaves').textContent = `${state.leave.filter(l => l.status === 'pending').length} pending requests`;
+    $('totalDepartments').textContent = state.departments.length;
+
+    const recent = [...state.employees].sort((a, b) => String(b.joinDate).localeCompare(String(a.joinDate))).slice(0, 5);
+    $('recentEmployeesTable').querySelector('tbody').innerHTML = recent.map(emp => `
         <tr>
-            <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${emp.firstName}+${emp.lastName}&background=4F46E5&color=fff" alt="${emp.firstName}">
-                    <span>${emp.firstName} ${emp.lastName}</span>
-                </div>
-            </td>
-            <td>${emp.department}</td>
-            <td>${emp.position}</td>
-            <td><span class="status-badge ${emp.status}">${emp.status}</span></td>
-        </tr>
-    `).join('');
+            <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
+            <td>${esc(emp.department)}</td>
+            <td>${esc(emp.position)}</td>
+            <td><span class="status-badge ${esc(emp.status)}">${esc(emp.status)}</span></td>
+        </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">No employees yet</td></tr>';
+
+    renderAttendanceChart();
+}
+
+function makeChart(key, canvasId, config) {
+    const canvas = $(canvasId);
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (charts[key]) charts[key].destroy();
+    charts[key] = new Chart(canvas, config);
+}
+
+function renderAttendanceChart() {
+    const days = $('attendancePeriod').value === 'month' ? 30 : 7;
+    const since = new Date(); since.setDate(since.getDate() - days);
+    const sinceStr = since.toISOString().slice(0, 10);
+    const rows = state.attendance.filter(a => !a.date || a.date >= sinceStr);
+    const count = s => rows.filter(a => a.status === s).length;
+
+    makeChart('attendance', 'attendanceCanvas', {
+        type: 'bar',
+        data: {
+            labels: ['Present', 'Late', 'Absent'],
+            datasets: [{ label: 'Records', data: [count('present'), count('late'), count('absent')], backgroundColor: ['#10B981', '#F59E0B', '#EF4444'] }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }
+    });
 }
 
 // ==================== Employees ====================
 function renderEmployees() {
-    const deptFilter = document.getElementById('departmentFilter').value;
-    const statusFilter = document.getElementById('statusFilter').value;
-    const tbody = document.querySelector('#employeesTable tbody');
+    const dept = $('departmentFilter').value;
+    const status = $('statusFilter').value;
+    const q = ui.searchQuery;
+    const tbody = $('employeesTable').querySelector('tbody');
+    $('selectAll').checked = false;
 
-    let filtered = state.employees;
-    if (deptFilter) filtered = filtered.filter(e => e.department === deptFilter);
-    if (statusFilter) filtered = filtered.filter(e => e.status === statusFilter);
+    let list = state.employees;
+    if (dept) list = list.filter(e => e.department === dept);
+    if (status) list = list.filter(e => e.status === status);
+    if (q) {
+        list = list.filter(e => [e.firstName, e.lastName, e.email, e.employeeId].some(v => String(v || '').toLowerCase().includes(q)));
+    }
 
-    tbody.innerHTML = filtered.map(emp => `
+    tbody.innerHTML = list.map(emp => `
         <tr>
             <td><input type="checkbox"></td>
-            <td>${emp.employeeId}</td>
-            <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${emp.firstName}+${emp.lastName}&background=4F46E5&color=fff" alt="${emp.firstName}">
-                    <span>${emp.firstName} ${emp.lastName}</span>
-                </div>
-            </td>
-            <td>${emp.email}</td>
-            <td>${emp.department}</td>
-            <td>${emp.position}</td>
+            <td>${esc(emp.employeeId)}</td>
+            <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
+            <td>${esc(emp.email)}</td>
+            <td>${esc(emp.department)}</td>
+            <td>${esc(emp.position)}</td>
             <td>${formatDate(emp.joinDate)}</td>
-            <td><span class="status-badge ${emp.status}">${emp.status}</span></td>
+            <td><span class="status-badge ${esc(emp.status)}">${esc(emp.status)}</span></td>
             <td>
-                <button class="btn-icon" onclick="viewEmployee(${emp.id})" title="View">
-                    <i class="fas fa-eye"></i>
-                </button>
-                <button class="btn-icon" onclick="editEmployee(${emp.id})" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn-icon" onclick="deleteEmployee(${emp.id})" title="Delete">
-                    <i class="fas fa-trash"></i>
-                </button>
+                <button class="btn-icon" onclick="viewEmployee('${esc(emp.id)}')" title="View"><i class="fas fa-eye"></i></button>
+                <button class="btn-icon" onclick="editEmployee('${esc(emp.id)}')" title="Edit"><i class="fas fa-edit"></i></button>
+                <button class="btn-icon" onclick="deleteEmployee('${esc(emp.id)}')" title="Delete"><i class="fas fa-trash"></i></button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;">No employees found</td></tr>';
 }
 
 function viewEmployee(id) {
-    const employee = state.employees.find(e => e.id === id);
+    const employee = findEmployee(id);
     if (employee) openEmployeeDetails(employee);
 }
 
 function editEmployee(id) {
-    const employee = state.employees.find(e => e.id === id);
+    const employee = findEmployee(id);
     if (employee) openEmployeeModal(employee);
 }
 
 async function deleteEmployee(id) {
-    if (confirm('Are you sure you want to delete this employee?')) {
-        try {
-            const employee = state.employees.find(e => e.id == id);
-            await api(`/employees/${id}`, 'DELETE');
-            
-            if (employee) {
-                const fullName = `${employee.firstName} ${employee.lastName}`;
-                const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
-                await api(`/profile_extensions/${safeKey}`, 'DELETE');
-            }
-
-            state.employees = state.employees.filter(e => e.id != id);
-            renderEmployees();
-            renderDashboard();
-            showToast('Employee deleted successfully!', 'success');
-        } catch (err) {
-            showToast('Failed to delete employee: ' + err.message, 'error');
+    if (!confirm('Are you sure you want to delete this employee?')) return;
+    try {
+        const employee = findEmployee(id);
+        await api(`/employees/${id}`, 'DELETE');
+        if (employee) {
+            try { await api(`/profile_extensions/${profileKey(fullNameOf(employee))}`, 'DELETE'); } catch (e) { /* ignore */ }
         }
+        state.employees = state.employees.filter(e => String(e.id) !== String(id));
+        renderEmployees();
+        renderDashboard();
+        renderDepartments();
+        renderUsers();
+        updateDropdowns();
+        showToast('Employee deleted successfully!', 'success');
+    } catch (err) {
+        showToast('Failed to delete employee: ' + err.message, 'error');
     }
 }
 
 async function saveEmployee() {
-    const form = document.getElementById('employeeForm');
+    const form = $('employeeForm');
+    const F = form.elements;
     const editId = form.dataset.editId;
+    const oldName = form.dataset.oldName;
 
-    const firstName = form.firstName.value;
-    const lastName = form.lastName.value;
+    const firstName = F.firstName.value.trim();
+    const lastName = F.lastName.value.trim();
     const fullName = `${firstName} ${lastName}`;
+    const employeeId = F.employeeId.value.trim();
+
+    if (state.employees.some(e => e.employeeId === employeeId && String(e.id) !== String(editId))) {
+        showToast('Employee ID already exists', 'error');
+        return;
+    }
 
     const employeeData = {
-        firstName: firstName,
-        lastName: lastName,
-        email: form.email.value,
-        phone: form.phone.value,
-        department: form.department.value,
-        position: form.position.value,
-        employeeId: form.employeeId.value,
-        joinDate: form.joinDate.value,
-        employmentType: form.employmentType.value,
-        salary: parseFloat(form.salary.value) || 0,
-        address: form.address.value,
-        status: form.status.value
+        firstName, lastName,
+        email: F.email.value.trim(),
+        phone: F.phone.value.trim(),
+        department: F.department.value,
+        position: F.position.value.trim(),
+        employeeId,
+        joinDate: F.joinDate.value,
+        employmentType: F.employmentType.value,
+        salary: parseFloat(F.salary.value) || 0,
+        address: F.address.value.trim(),
+        status: F.status.value
     };
 
-    // Construct profile extension data
     const profileData = {
-        address: form.address.value || "",
-        bio: form.bio?.value || "",
-        email: form.email.value || "",
-        image: "https://ui-avatars.com/api/?name=" + encodeURIComponent(fullName) + "&background=4F46E5&color=fff",
-        location: form.location?.value || "General",
-        logType: form.logType?.value || "Logs",
-        password: form.password?.value || "123456",
-        phone: form.phone.value || "",
-        role: form.role?.value || "USER"
+        address: employeeData.address,
+        bio: F.bio.value || '',
+        email: employeeData.email,
+        image: avatar(fullName),
+        location: F.location.value || 'General',
+        logType: F.logType.value || 'Logs',
+        password: F.password.value || '123456',
+        phone: employeeData.phone,
+        role: F.role.value || 'USER'
     };
 
     try {
-        // Save to /employees
         if (editId) {
             const updated = await api(`/employees/${editId}`, 'PUT', employeeData);
-            const index = state.employees.findIndex(e => e.id == editId);
+            const index = state.employees.findIndex(e => String(e.id) === String(editId));
             if (index !== -1) state.employees[index] = updated;
+            if (oldName && oldName !== fullName) {
+                try { await api(`/profile_extensions/${profileKey(oldName)}`, 'DELETE'); } catch (e) { /* ignore */ }
+            }
             showToast('Employee updated successfully!', 'success');
         } else {
-            const newEmp = await api('/employees', 'POST', employeeData);
-            state.employees.push(newEmp);
+            const created = await api('/employees', 'POST', employeeData);
+            state.employees.push(created);
             showToast('Employee added successfully!', 'success');
         }
 
-        // Save to /profile_extensions
-        // Firebase keys cannot contain . # $ [ ]
-        const safeKey = encodeURIComponent(fullName).replace(/\./g, '%2E');
-        await api(`/profile_extensions/${safeKey}`, 'PUT', profileData);
+        await api(`/profile_extensions/${profileKey(fullName)}`, 'PUT', profileData);
+        state.profiles = await api('/profile_extensions').catch(() => state.profiles);
 
         closeModal('employeeModal');
         renderEmployees();
         renderDashboard();
+        renderDepartments();
+        renderUsers();
         updateDropdowns();
     } catch (err) {
         showToast('Failed to save employee: ' + err.message, 'error');
@@ -599,88 +640,77 @@ async function saveEmployee() {
 
 // ==================== Departments ====================
 function renderDepartments() {
-    const grid = document.getElementById('departmentsGrid');
-    
-    grid.innerHTML = state.departments.map(dept => `
+    const q = ($('departmentSearch').value || '').toLowerCase();
+    const list = state.departments.filter(d => !q || String(d.name).toLowerCase().includes(q) || String(d.code || '').toLowerCase().includes(q));
+
+    $('departmentsGrid').innerHTML = list.map(dept => {
+        const count = state.employees.filter(e => e.department === dept.name).length;
+        return `
         <div class="department-card">
             <div class="department-header">
-                <div class="department-icon">
-                    <i class="fas fa-building"></i>
-                </div>
+                <div class="department-icon"><i class="fas fa-building"></i></div>
                 <div class="department-actions">
-                    <button class="btn-icon" onclick="editDepartment(${dept.id})">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn-icon" onclick="deleteDepartment(${dept.id})">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                    <button class="btn-icon" onclick="editDepartment('${esc(dept.id)}')"><i class="fas fa-edit"></i></button>
+                    <button class="btn-icon" onclick="deleteDepartment('${esc(dept.id)}')"><i class="fas fa-trash"></i></button>
                 </div>
             </div>
-            <h3>${dept.name}</h3>
-            <p class="department-code">${dept.code}</p>
+            <h3>${esc(dept.name)}</h3>
+            <p class="department-code">${esc(dept.code)}</p>
             <div class="department-stats">
-                <div class="dept-stat">
-                    <span class="dept-stat-label">Employees</span>
-                    <span class="dept-stat-value">${dept.employees}</span>
-                </div>
-                <div class="dept-stat">
-                    <span class="dept-stat-label">Budget</span>
-                    <span class="dept-stat-value">${formatCurrency(dept.budget)}</span>
-                </div>
+                <div class="dept-stat"><span class="dept-stat-label">Employees</span><span class="dept-stat-value">${count}</span></div>
+                <div class="dept-stat"><span class="dept-stat-label">Budget</span><span class="dept-stat-value">${formatCurrency(dept.budget)}</span></div>
             </div>
             <div class="department-head">
-                <img src="https://ui-avatars.com/api/?name=${dept.head}&background=10B981&color=fff" alt="${dept.head}">
-                <span>Head: ${dept.head}</span>
+                <img src="${avatar(dept.head || 'NA', '10B981')}" alt="">
+                <span>Head: ${esc(dept.head || 'Not assigned')}</span>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('') || '<p style="padding:16px;">No departments found</p>';
 }
 
 function editDepartment(id) {
-    const department = state.departments.find(d => d.id === id);
+    const department = state.departments.find(d => String(d.id) === String(id));
     if (department) openDepartmentModal(department);
 }
 
 async function deleteDepartment(id) {
-    if (confirm('Are you sure you want to delete this department?')) {
-        try {
-            await api(`/departments/${id}`, 'DELETE');
-            state.departments = state.departments.filter(d => d.id != id);
-            renderDepartments();
-            renderDashboard();
-            updateDropdowns();
-            showToast('Department deleted successfully!', 'success');
-        } catch (err) {
-            showToast('Failed to delete department: ' + err.message, 'error');
-        }
+    if (!confirm('Are you sure you want to delete this department?')) return;
+    try {
+        await api(`/departments/${id}`, 'DELETE');
+        state.departments = state.departments.filter(d => String(d.id) !== String(id));
+        renderDepartments();
+        renderDashboard();
+        updateDropdowns();
+        showToast('Department deleted successfully!', 'success');
+    } catch (err) {
+        showToast('Failed to delete department: ' + err.message, 'error');
     }
 }
 
 async function saveDepartment() {
-    const form = document.getElementById('departmentForm');
+    const form = $('departmentForm');
+    const F = form.elements;
     const editId = form.dataset.editId;
 
-    const departmentData = {
-        name: form.name.value,
-        code: form.code.value,
-        head: form.head.value,
-        description: form.description.value,
-        budget: parseFloat(form.budget.value) || 0,
-        employees: Math.floor(Math.random() * 30) + 5
+    const data = {
+        name: F.name.value.trim(),
+        code: F.code.value.trim(),
+        head: F.head.value,
+        description: F.description.value.trim(),
+        budget: parseFloat(F.budget.value) || 0
     };
 
     try {
         if (editId) {
-            const updated = await api(`/departments/${editId}`, 'PUT', departmentData);
-            const index = state.departments.findIndex(d => d.id == editId);
+            const updated = await api(`/departments/${editId}`, 'PUT', data);
+            const index = state.departments.findIndex(d => String(d.id) === String(editId));
             if (index !== -1) state.departments[index] = updated;
             showToast('Department updated successfully!', 'success');
         } else {
-            const newDept = await api('/departments', 'POST', departmentData);
-            state.departments.push(newDept);
+            const created = await api('/departments', 'POST', data);
+            state.departments.push(created);
             showToast('Department added successfully!', 'success');
         }
-
         closeModal('departmentModal');
         renderDepartments();
         renderDashboard();
@@ -691,117 +721,266 @@ async function saveDepartment() {
 }
 
 // ==================== Attendance ====================
+function calcHours(checkIn, checkOut) {
+    if (!checkIn || !checkOut) return 0;
+    const [h1, m1] = checkIn.split(':').map(Number);
+    const [h2, m2] = checkOut.split(':').map(Number);
+    let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+    if (mins < 0) mins += 24 * 60;
+    return Math.round((mins / 60) * 100) / 100;
+}
+
+function visibleAttendance() {
+    const date = $('attendanceDate').value;
+    let list = state.attendance.filter(a => !a.date || !date || a.date === date);
+    if (!isAdmin()) list = list.filter(a => sameName(a.name, state.currentUser.name));
+    return list;
+}
+
 function renderAttendance() {
-    const tbody = document.querySelector('#attendanceTable tbody');
-    
-    tbody.innerHTML = state.attendance.map(att => `
+    $('attendanceTable').querySelector('tbody').innerHTML = visibleAttendance().map(att => `
         <tr>
-            <td>${att.employeeId}</td>
+            <td>${esc(att.employeeId)}</td>
+            <td><div class="user-info"><img src="${avatar(att.name)}" alt=""><span>${esc(att.name)}</span></div></td>
+            <td>${esc(att.department)}</td>
+            <td>${esc(att.checkIn || '-')}</td>
+            <td>${esc(att.checkOut || '-')}</td>
+            <td>${esc(att.hoursWorked ?? 0)} hrs</td>
+            <td><span class="status-badge ${esc(att.status)}">${esc(att.status)}</span></td>
             <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${att.name}&background=4F46E5&color=fff" alt="${att.name}">
-                    <span>${att.name}</span>
-                </div>
+                ${isAdmin() ? `<button class="btn-icon" onclick="markAttendance('${esc(att.employeeId)}', '${esc(att.id)}')" title="Mark Present"><i class="fas fa-check"></i></button>` : ''}
+                <button class="btn-icon" onclick="editAttendance('${esc(att.id)}')" title="Edit"><i class="fas fa-edit"></i></button>
             </td>
-            <td>${att.department}</td>
-            <td>${att.checkIn}</td>
-            <td>${att.checkOut}</td>
-            <td>${att.hoursWorked} hrs</td>
-            <td><span class="status-badge ${att.status}">${att.status}</span></td>
-            <td>
-                <button class="btn-icon" onclick="markAttendance('${att.employeeId}', ${att.id})" title="Mark">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button class="btn-icon" onclick="editAttendance(${att.id})" title="Edit">
-                    <i class="fas fa-edit"></i>
-                </button>
-            </td>
-        </tr>
-    `).join('');
+        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;">No attendance records for this date</td></tr>';
+}
+
+function openAttendanceModal(record = null) {
+    const form = $('attendanceForm');
+    const F = form.elements;
+    updateDropdowns();
+
+    if (record) {
+        $('attendanceModalTitle').textContent = 'Edit Attendance';
+        form.dataset.editId = record.id;
+        const emp = state.employees.find(e => e.employeeId === record.employeeId || sameName(fullNameOf(e), record.name));
+        F.employee.value = emp ? emp.id : '';
+        F.date.value = record.date || $('attendanceDate').value || todayStr();
+        F.checkIn.value = record.checkIn || '09:00';
+        F.checkOut.value = record.checkOut || '18:00';
+        F.status.value = record.status || 'present';
+    } else {
+        $('attendanceModalTitle').textContent = 'Mark Attendance';
+        delete form.dataset.editId;
+        form.reset();
+        F.date.value = $('attendanceDate').value || todayStr();
+        if (!isAdmin()) {
+            const me = state.employees.find(e => sameName(fullNameOf(e), state.currentUser.name));
+            if (me) F.employee.value = me.id;
+        }
+    }
+    $('attendanceModal').classList.add('active');
+}
+
+function editAttendance(id) {
+    const record = state.attendance.find(a => String(a.id) === String(id));
+    if (record) openAttendanceModal(record);
+}
+
+async function saveAttendance() {
+    const form = $('attendanceForm');
+    const F = form.elements;
+    const editId = form.dataset.editId;
+    const emp = findEmployee(F.employee.value);
+    if (!emp) { showToast('Select a valid employee', 'error'); return; }
+
+    const status = F.status.value;
+    const data = {
+        employeeId: emp.employeeId,
+        name: fullNameOf(emp),
+        department: emp.department || '',
+        date: F.date.value,
+        checkIn: status === 'absent' ? '' : F.checkIn.value,
+        checkOut: status === 'absent' ? '' : F.checkOut.value,
+        hoursWorked: status === 'absent' ? 0 : calcHours(F.checkIn.value, F.checkOut.value),
+        status
+    };
+
+    try {
+        if (editId) {
+            const updated = await api(`/attendance/${editId}`, 'PUT', data);
+            const i = state.attendance.findIndex(a => String(a.id) === String(editId));
+            if (i !== -1) state.attendance[i] = updated;
+        } else {
+            state.attendance.push(await api('/attendance', 'POST', data));
+        }
+        closeModal('attendanceModal');
+        renderAttendance();
+        renderDashboard();
+        showToast('Attendance saved!', 'success');
+    } catch (err) {
+        showToast('Failed to save attendance: ' + err.message, 'error');
+    }
 }
 
 async function markAttendance(employeeId, id) {
     try {
-        const updated = await api(`/attendance/${id}`, 'PUT', {
-            checkIn: '09:00',
-            checkOut: '18:00',
-            hoursWorked: 9,
-            status: 'present'
-        });
-        const index = state.attendance.findIndex(a => a.id == id);
-        if (index !== -1) state.attendance[index] = updated;
+        const updated = await api(`/attendance/${id}`, 'PUT', { checkIn: '09:00', checkOut: '18:00', hoursWorked: 9, status: 'present' });
+        const i = state.attendance.findIndex(a => String(a.id) === String(id));
+        if (i !== -1) state.attendance[i] = updated;
         renderAttendance();
+        renderDashboard();
         showToast('Attendance marked!', 'success');
     } catch (err) {
         showToast('Failed to mark attendance: ' + err.message, 'error');
     }
 }
 
-function editAttendance(id) {
-    showToast('Edit attendance form opened', 'success');
-}
-
 // ==================== Performance ====================
 function renderPerformance() {
-    const tbody = document.querySelector('#topPerformersTable tbody');
-    
-    const sorted = [...state.performance].sort((a, b) => b.score - a.score);
-    
-    tbody.innerHTML = sorted.map((perf, index) => `
+    if (!isAdmin()) return;
+    const period = $('performancePeriod').value;
+    const dept = $('performanceDepartment').value;
+
+    let list = [...state.performance];
+    if (period) list = list.filter(p => p.period === period);
+    if (dept) list = list.filter(p => p.department === dept);
+    list.sort((a, b) => Number(b.score) - Number(a.score));
+
+    $('topPerformersTable').querySelector('tbody').innerHTML = list.slice(0, 10).map((p, i) => `
         <tr>
-            <td>#${index + 1}</td>
-            <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${perf.name}&background=4F46E5&color=fff" alt="${perf.name}">
-                    <span>${perf.name}</span>
-                </div>
-            </td>
-            <td>${perf.department}</td>
-            <td><strong>${perf.score}</strong></td>
-        </tr>
-    `).join('');
+            <td>#${i + 1}</td>
+            <td><div class="user-info"><img src="${avatar(p.name)}" alt=""><span>${esc(p.name)}</span></div></td>
+            <td>${esc(p.department)}</td>
+            <td><strong>${esc(p.score)}</strong></td>
+        </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;">No reviews yet</td></tr>';
+
+    const bucket = fn => list.filter(p => fn(Number(p.score))).length;
+    makeChart('performance', 'performanceCanvas', {
+        type: 'doughnut',
+        data: {
+            labels: ['Excellent (90+)', 'Good (75-89)', 'Average (60-74)', 'Poor (<60)'],
+            datasets: [{
+                data: [bucket(s => s >= 90), bucket(s => s >= 75 && s < 90), bucket(s => s >= 60 && s < 75), bucket(s => s < 60)],
+                backgroundColor: ['#10B981', '#4F46E5', '#F59E0B', '#EF4444']
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false }
+    });
+}
+
+function openReviewModal() {
+    updateDropdowns();
+    $('reviewForm').reset();
+    $('reviewModal').classList.add('active');
+}
+
+async function saveReview() {
+    const F = $('reviewForm').elements;
+    const emp = findEmployee(F.employee.value);
+    if (!emp) { showToast('Select a valid employee', 'error'); return; }
+
+    const data = {
+        employeeId: emp.employeeId,
+        name: fullNameOf(emp),
+        department: emp.department || '',
+        score: Math.min(100, Math.max(0, Number(F.score.value) || 0)),
+        period: F.period.value,
+        comments: F.comments.value.trim(),
+        date: todayStr()
+    };
+
+    try {
+        state.performance.push(await api('/performance', 'POST', data));
+        closeModal('reviewModal');
+        renderPerformance();
+        showToast('Review saved!', 'success');
+    } catch (err) {
+        showToast('Failed to save review: ' + err.message, 'error');
+    }
 }
 
 // ==================== Payroll ====================
+function selectedPayrollPeriod() {
+    const [month, year] = $('payrollMonth').value.split('-').map(Number);
+    return { month, year };
+}
+
 function renderPayroll() {
-    const tbody = document.querySelector('#payrollTable tbody');
-    
-    tbody.innerHTML = state.payroll.map(pay => `
+    if (!isAdmin()) return;
+    const { month, year } = selectedPayrollPeriod();
+    const dept = $('payrollDepartment').value;
+
+    let list = state.payroll.filter(p => !p.month || (Number(p.month) === month && Number(p.year) === year));
+    if (dept) list = list.filter(p => p.department === dept);
+
+    $('payrollTable').querySelector('tbody').innerHTML = list.map(pay => `
         <tr>
-            <td>${pay.employeeId}</td>
-            <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${pay.name}&background=4F46E5&color=fff" alt="${pay.name}">
-                    <span>${pay.name}</span>
-                </div>
-            </td>
-            <td>${pay.department}</td>
+            <td>${esc(pay.employeeId)}</td>
+            <td><div class="user-info"><img src="${avatar(pay.name)}" alt=""><span>${esc(pay.name)}</span></div></td>
+            <td>${esc(pay.department)}</td>
             <td>${formatCurrency(pay.basicSalary)}</td>
             <td>${formatCurrency(pay.allowances)}</td>
             <td>${formatCurrency(pay.deductions)}</td>
             <td><strong>${formatCurrency(pay.netSalary)}</strong></td>
-            <td><span class="status-badge ${pay.status}">${pay.status}</span></td>
+            <td><span class="status-badge ${esc(pay.status)}">${esc(pay.status)}</span></td>
             <td>
-                <button class="btn-icon" onclick="viewPayslip('${pay.employeeId}')" title="View Payslip">
-                    <i class="fas fa-file-invoice"></i>
-                </button>
-                <button class="btn-icon" onclick="processPayment('${pay.employeeId}', ${pay.id})" title="Process Payment">
-                    <i class="fas fa-money-bill"></i>
-                </button>
+                <button class="btn-icon" onclick="viewPayslip('${esc(pay.id)}')" title="View Payslip"><i class="fas fa-file-invoice"></i></button>
+                <button class="btn-icon" onclick="processPayment('${esc(pay.id)}')" title="Process Payment"><i class="fas fa-money-bill"></i></button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;">No payroll for this period. Click "Generate Payroll".</td></tr>';
 }
 
-function viewPayslip(employeeId) {
-    showToast(`Payslip for ${employeeId} generated`, 'success');
+async function generatePayroll() {
+    const { month, year } = selectedPayrollPeriod();
+    const dept = $('payrollDepartment').value;
+    const targets = state.employees.filter(e => e.status === 'active' && (!dept || e.department === dept));
+    if (!targets.length) { showToast('No active employees to process', 'error'); return; }
+
+    let created = 0;
+    try {
+        for (const emp of targets) {
+            const exists = state.payroll.some(p => p.employeeId === emp.employeeId && Number(p.month) === month && Number(p.year) === year);
+            if (exists) continue;
+            const basic = Number(emp.salary) || 0;
+            const allowances = Math.round(basic * PAYROLL_RULES.allowanceRate);
+            const deductions = Math.round(basic * PAYROLL_RULES.deductionRate);
+            const rec = await api('/payroll', 'POST', {
+                employeeId: emp.employeeId, name: fullNameOf(emp), department: emp.department || '',
+                basicSalary: basic, allowances, deductions, netSalary: basic + allowances - deductions,
+                month, year, status: 'pending'
+            });
+            state.payroll.push(rec);
+            created++;
+        }
+        renderPayroll();
+        showToast(created ? `Payroll generated for ${created} employee(s)` : 'Payroll already exists for this period', created ? 'success' : 'info');
+    } catch (err) {
+        showToast('Failed to generate payroll: ' + err.message, 'error');
+    }
 }
 
-async function processPayment(employeeId, id) {
+function viewPayslip(id) {
+    const p = state.payroll.find(x => String(x.id) === String(id));
+    if (!p) return;
+    const w = window.open('', '_blank', 'width=520,height=640');
+    if (!w) { showToast('Allow pop-ups to view the payslip', 'error'); return; }
+    w.document.write(`<html><head><title>Payslip - ${esc(p.name)}</title>
+        <style>body{font-family:Arial,sans-serif;padding:24px}td{padding:6px 12px;border-bottom:1px solid #ddd}</style></head><body>
+        <h2>Payslip</h2><p>${esc(p.name)} (${esc(p.employeeId)}) - ${esc(p.department)}<br>Period: ${esc(p.month)}/${esc(p.year)}</p>
+        <table><tr><td>Basic Salary</td><td>${formatCurrency(p.basicSalary)}</td></tr>
+        <tr><td>Allowances</td><td>${formatCurrency(p.allowances)}</td></tr>
+        <tr><td>Deductions</td><td>-${formatCurrency(p.deductions)}</td></tr>
+        <tr><td><strong>Net Salary</strong></td><td><strong>${formatCurrency(p.netSalary)}</strong></td></tr>
+        <tr><td>Status</td><td>${esc(p.status)}</td></tr></table>
+        <p><button onclick="window.print()">Print</button></p></body></html>`);
+    w.document.close();
+}
+
+async function processPayment(id) {
     try {
         const updated = await api(`/payroll/${id}`, 'PUT', { status: 'paid' });
-        const index = state.payroll.findIndex(p => p.id == id);
-        if (index !== -1) state.payroll[index] = updated;
+        const i = state.payroll.findIndex(p => String(p.id) === String(id));
+        if (i !== -1) state.payroll[i] = updated;
         renderPayroll();
         showToast('Payment processed successfully!', 'success');
     } catch (err) {
@@ -810,195 +989,176 @@ async function processPayment(employeeId, id) {
 }
 
 // ==================== Leave Management ====================
+function daysBetween(from, to) {
+    const d = Math.round((new Date(to) - new Date(from)) / 86400000) + 1;
+    return d > 0 ? d : 0;
+}
+
+function visibleLeave() {
+    let list = [...state.leave];
+    if (!isAdmin()) list = list.filter(l => sameName(l.employee, state.currentUser.name));
+    const status = $('leaveStatus').value;
+    const type = $('leaveType').value;
+    if (status) list = list.filter(l => l.status === status);
+    if (type) list = list.filter(l => l.type === type);
+    return list;
+}
+
 function renderLeave() {
-    const tbody = document.querySelector('#leaveTable tbody');
-    
-    tbody.innerHTML = state.leave.map(lv => `
+    $('leaveTable').querySelector('tbody').innerHTML = visibleLeave().map(lv => `
         <tr>
-            <td>
-                <div class="user-info">
-                    <img src="https://ui-avatars.com/api/?name=${lv.employee}&background=4F46E5&color=fff" alt="${lv.employee}">
-                    <span>${lv.employee}</span>
-                </div>
-            </td>
+            <td><div class="user-info"><img src="${avatar(lv.employee)}" alt=""><span>${esc(lv.employee)}</span></div></td>
             <td>${formatLeaveType(lv.type)}</td>
             <td>${formatDate(lv.fromDate)}</td>
             <td>${formatDate(lv.toDate)}</td>
-            <td>${lv.days} days</td>
-            <td>${lv.reason}</td>
-            <td><span class="status-badge ${lv.status}">${lv.status}</span></td>
-            <td>
-                <button class="btn-icon" onclick="approveLeave(${lv.id})" title="Approve">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button class="btn-icon" onclick="rejectLeave(${lv.id})" title="Reject">
-                    <i class="fas fa-times"></i>
-                </button>
+            <td>${esc(lv.days)} days</td>
+            <td>${esc(lv.reason)}</td>
+            <td><span class="status-badge ${esc(lv.status)}">${esc(lv.status)}</span></td>
+            <td>${isAdmin() && lv.status === 'pending' ? `
+                <button class="btn-icon" onclick="approveLeave('${esc(lv.id)}')" title="Approve"><i class="fas fa-check"></i></button>
+                <button class="btn-icon" onclick="rejectLeave('${esc(lv.id)}')" title="Reject"><i class="fas fa-times"></i></button>` : '-'}
             </td>
-        </tr>
-    `).join('');
+        </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;">No leave requests</td></tr>';
+
+    const mine = isAdmin() ? state.leave : state.leave.filter(l => sameName(l.employee, state.currentUser.name));
+    document.querySelectorAll('.leave-stat-card').forEach(card => {
+        const type = card.dataset.type;
+        const total = LEAVE_ALLOWANCE[type] || 0;
+        const used = mine.filter(l => l.type === type && l.status === 'approved').reduce((s, l) => s + (Number(l.days) || 0), 0);
+        card.querySelector('.used').textContent = `Used: ${used}`;
+        card.querySelector('.remaining').textContent = `Remaining: ${Math.max(total - used, 0)}`;
+        card.querySelector('.progress').style.width = `${total ? Math.min(100, Math.round((used / total) * 100)) : 0}%`;
+    });
+    updateNotifications();
 }
 
-async function approveLeave(id) {
+function openLeaveModal() {
+    updateDropdowns();
+    const form = $('leaveForm');
+    form.reset();
+    if (!isAdmin()) {
+        const me = state.employees.find(e => sameName(fullNameOf(e), state.currentUser.name));
+        if (me) form.elements.employee.value = me.id;
+    }
+    $('leaveModal').classList.add('active');
+}
+
+async function saveLeave() {
+    const F = $('leaveForm').elements;
+    const emp = findEmployee(F.employee.value);
+    if (!emp) { showToast('Select a valid employee', 'error'); return; }
+    const days = daysBetween(F.fromDate.value, F.toDate.value);
+    if (!days) { showToast('"To" date must be on or after "From" date', 'error'); return; }
+
+    const data = {
+        employeeId: emp.employeeId,
+        employee: fullNameOf(emp),
+        type: F.type.value,
+        fromDate: F.fromDate.value,
+        toDate: F.toDate.value,
+        days,
+        reason: F.reason.value.trim(),
+        status: 'pending'
+    };
+
     try {
-        const updated = await api(`/leave/${id}`, 'PUT', { status: 'approved' });
-        const index = state.leave.findIndex(l => l.id == id);
-        if (index !== -1) state.leave[index] = updated;
+        state.leave.push(await api('/leave', 'POST', data));
+        closeModal('leaveModal');
         renderLeave();
-        showToast('Leave request approved!', 'success');
+        renderDashboard();
+        showToast('Leave request submitted!', 'success');
     } catch (err) {
-        showToast('Failed to approve leave: ' + err.message, 'error');
+        showToast('Failed to submit leave: ' + err.message, 'error');
     }
 }
 
-async function rejectLeave(id) {
+async function setLeaveStatus(id, status, message) {
     try {
-        const updated = await api(`/leave/${id}`, 'PUT', { status: 'rejected' });
-        const index = state.leave.findIndex(l => l.id == id);
-        if (index !== -1) state.leave[index] = updated;
+        const updated = await api(`/leave/${id}`, 'PUT', { status });
+        const i = state.leave.findIndex(l => String(l.id) === String(id));
+        if (i !== -1) state.leave[i] = updated;
         renderLeave();
-        showToast('Leave request rejected', 'success');
+        renderDashboard();
+        showToast(message, 'success');
     } catch (err) {
-        showToast('Failed to reject leave: ' + err.message, 'error');
+        showToast('Failed to update leave: ' + err.message, 'error');
     }
 }
+const approveLeave = id => setLeaveStatus(id, 'approved', 'Leave request approved!');
+const rejectLeave = id => setLeaveStatus(id, 'rejected', 'Leave request rejected');
 
 // ==================== Reports ====================
+function downloadFile(filename, content, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function toCSV(rows) {
+    if (!rows.length) return '';
+    const headers = Object.keys(rows[0]);
+    const cell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    return [headers.map(cell).join(','), ...rows.map(r => headers.map(h => cell(r[h])).join(','))].join('\n');
+}
+
 function generateReport(type) {
-    const reports = {
-        attendance: 'Attendance Report',
-        performance: 'Performance Report',
-        payroll: 'Payroll Report',
-        leave: 'Leave Report',
-        department: 'Department Report',
-        employee: 'Employee Report'
+    const builders = {
+        attendance: () => state.attendance.map(a => ({ Date: a.date, EmployeeID: a.employeeId, Name: a.name, Department: a.department, CheckIn: a.checkIn, CheckOut: a.checkOut, Hours: a.hoursWorked, Status: a.status })),
+        performance: () => state.performance.map(p => ({ Name: p.name, Department: p.department, Period: p.period, Score: p.score, Comments: p.comments, Date: p.date })),
+        payroll: () => state.payroll.map(p => ({ EmployeeID: p.employeeId, Name: p.name, Department: p.department, Month: p.month, Year: p.year, Basic: p.basicSalary, Allowances: p.allowances, Deductions: p.deductions, Net: p.netSalary, Status: p.status })),
+        leave: () => state.leave.map(l => ({ Employee: l.employee, Type: l.type, From: l.fromDate, To: l.toDate, Days: l.days, Reason: l.reason, Status: l.status })),
+        department: () => state.departments.map(d => ({ Name: d.name, Code: d.code, Head: d.head, Budget: d.budget, Employees: state.employees.filter(e => e.department === d.name).length })),
+        employee: () => state.employees.map(e => ({ EmployeeID: e.employeeId, Name: fullNameOf(e), Email: e.email, Phone: e.phone, Department: e.department, Position: e.position, JoinDate: e.joinDate, Type: e.employmentType, Salary: e.salary, Status: e.status }))
     };
-    
-    showToast(`${reports[type]} is being generated...`, 'success');
-    
-    setTimeout(() => {
-        showToast('Report downloaded successfully!', 'success');
-    }, 1500);
+    const rows = builders[type]?.() || [];
+    if (!rows.length) { showToast('No data available for this report', 'error'); return; }
+    downloadFile(`${type}-report-${todayStr()}.csv`, toCSV(rows), 'text/csv;charset=utf-8');
+    showToast('Report downloaded successfully!', 'success');
 }
 
-// ==================== Helpers ====================
-function updateDropdowns() {
-    const deptSelects = [
-        'departmentFilter',
-        'employeeDepartment',
-        'performanceDepartment',
-        'payrollDepartment'
-    ];
-
-    deptSelects.forEach(selectId => {
-        const select = document.getElementById(selectId);
-        if (select) {
-            const currentValue = select.value;
-            select.innerHTML = '<option value="">All Departments</option>' +
-                state.departments.map(dept => 
-                    `<option value="${dept.name}">${dept.name}</option>`
-                ).join('');
-            select.value = currentValue;
-        }
-    });
-
-    // Department head dropdown
-    const headSelect = document.getElementById('departmentHead');
-    if (headSelect) {
-        headSelect.innerHTML = '<option value="">Select Employee</option>' +
-            state.employees.map(emp => 
-                `<option value="${emp.firstName} ${emp.lastName}">${emp.firstName} ${emp.lastName}</option>`
-            ).join('');
-    }
+// ==================== Settings & Data ====================
+function loadSettings() {
+    const form = $('companySettingsForm');
+    if (!form) return;
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem('ems_settings')); } catch (e) { /* ignore */ }
+    if (!s) return;
+    form.elements.companyName.value = s.companyName ?? '';
+    form.elements.industry.value = s.industry ?? '';
+    form.elements.startTime.value = s.startTime ?? '09:00';
+    form.elements.endTime.value = s.endTime ?? '18:00';
+    form.querySelectorAll('input[name="workDays"]').forEach(cb => { cb.checked = (s.workDays || []).includes(cb.value); });
 }
 
-function handleGlobalSearch(e) {
-    const query = e.target.value.toLowerCase();
-    if (query.length < 2) return;
-
-    const results = state.employees.filter(emp => 
-        emp.firstName.toLowerCase().includes(query) ||
-        emp.lastName.toLowerCase().includes(query) ||
-        emp.email.toLowerCase().includes(query) ||
-        emp.employeeId.toLowerCase().includes(query)
-    );
-
-    if (results.length > 0) {
-        showSection('employees');
-        renderEmployees();
-    }
-}
-
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0
-    }).format(amount);
-}
-
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
-}
-
-function formatEmploymentType(type) {
-    const types = {
-        'full-time': 'Full Time',
-        'part-time': 'Part Time',
-        'contract': 'Contract',
-        'internship': 'Internship'
+function saveSettings() {
+    const form = $('companySettingsForm');
+    const s = {
+        companyName: form.elements.companyName.value,
+        industry: form.elements.industry.value,
+        startTime: form.elements.startTime.value,
+        endTime: form.elements.endTime.value,
+        workDays: [...form.querySelectorAll('input[name="workDays"]:checked')].map(cb => cb.value)
     };
-    return types[type] || type;
+    localStorage.setItem('ems_settings', JSON.stringify(s));
+    showToast('Settings saved successfully!', 'success');
 }
 
-function formatLeaveType(type) {
-    const types = {
-        'sick': 'Sick Leave',
-        'casual': 'Casual Leave',
-        'annual': 'Annual Leave',
-        'maternity': 'Maternity Leave'
-    };
-    return types[type] || type;
+function exportData() {
+    const { employees, departments, attendance, performance, payroll, leave } = state;
+    downloadFile(`ems-backup-${todayStr()}.json`, JSON.stringify({ employees, departments, attendance, performance, payroll, leave }, null, 2), 'application/json');
+    showToast('Data exported', 'success');
 }
 
-function showToast(message, type = 'success') {
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    toast.innerHTML = `
-        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-        <span>${message}</span>
-        <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
-    `;
-    document.body.appendChild(toast);
-
-    setTimeout(() => {
-        toast.remove();
-    }, 3000);
-}
-
-// ==================== Chart Initialization (Placeholder) ====================
-// For actual charts, integrate Chart.js or similar library
-function initCharts() {
-    // Attendance chart placeholder
-    const attendanceCanvas = document.getElementById('attendanceCanvas');
-    if (attendanceCanvas) {
-        // Initialize with Chart.js when library is loaded
-        console.log('Attendance chart ready');
-    }
-
-    // Performance chart placeholder
-    const performanceCanvas = document.getElementById('performanceCanvas');
-    if (performanceCanvas) {
-        // Initialize with Chart.js when library is loaded
-        console.log('Performance chart ready');
-    }
-}
-
-// Initialize charts on load
-initCharts();
+function renderUsers() {
+    const tbody = $('usersTable')?.querySelector('tbody');
+    if (!tbody) return;
+    tbody.innerHTML = state.employees.map(emp => {
+        const profile = state.profiles.find(p => p.id === profileKey(fullNameOf(emp)));
+        const role = String(profile?.role || 'USER').toUpperCase() === 'ADMIN' ? 'Administrator' : 'Employee';
+        return `<tr>
+            <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
+            <td>${role}</td>
+            <td>${esc(emp.employeeId)}</td
