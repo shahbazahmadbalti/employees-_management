@@ -17,11 +17,12 @@
             </div>
             <nav class="menu">
                 <ul>
-                    <li class="active" data-section="dashboard"><a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                    <li class="active admin-only" data-section="dashboard"><a href="#"><i class="fas fa-tachometer-alt"></i> Dashboard</a></li>
+                    <li data-section="myday"><a href="#"><i class="fas fa-stopwatch"></i> My Day</a></li>
                     <li data-section="schedule"><a href="#"><i class="fas fa-calendar-alt"></i> Schedule</a></li>
                     <li data-section="employees" class="admin-only"><a href="#"><i class="fas fa-user-tie"></i> Employees</a></li>
                     <li data-section="departments" class="admin-only"><a href="#"><i class="fas fa-building"></i> Departments</a></li>
-                    <li data-section="attendance"><a href="#"><i class="fas fa-calendar-check"></i> Attendance</a></li>
+                    <li data-section="attendance" class="admin-only"><a href="#"><i class="fas fa-calendar-check"></i> Attendance</a></li>
                     <li data-section="performance" class="admin-only"><a href="#"><i class="fas fa-chart-line"></i> Performance</a></li>
                     <li data-section="payroll" class="admin-only"><a href="#"><i class="fas fa-money-bill-wave"></i> Payroll</a></li>
                     <li data-section="leave"><a href="#"><i class="fas fa-plane-departure"></i> Leave Management</a></li>
@@ -60,7 +61,7 @@
                 </div>
             </header>
 
-            <!-- Dashboard -->
+            <!-- Dashboard (admin) -->
             <section id="dashboard" class="content-section active">
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -74,7 +75,7 @@
                     <div class="stat-card">
                         <div class="stat-icon green"><i class="fas fa-user-check"></i></div>
                         <div class="stat-info">
-                            <h3>Present Today</h3>
+                            <h3>Checked In Today</h3>
                             <p class="stat-number" id="presentToday">0</p>
                             <span class="stat-change positive" id="attendanceRate">0% attendance</span>
                         </div>
@@ -113,7 +114,7 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <h3>Attendance Overview</h3>
+                            <h3>Check-ins Overview</h3>
                             <select id="attendancePeriod">
                                 <option value="week">This Week</option>
                                 <option value="month">This Month</option>
@@ -128,7 +129,35 @@
                 </div>
             </section>
 
-            <!-- Employees -->
+            <!-- My Day (everyone): button-only time logging -->
+            <section id="myday" class="content-section">
+                <div class="card md-head">
+                    <div class="md-head-row">
+                        <button class="btn-icon md-nav" id="myDayPrev" title="Previous day"><i class="fas fa-chevron-left"></i></button>
+                        <div class="md-title">
+                            <h2 id="myDayDate"></h2>
+                            <div id="myDayShift"></div>
+                        </div>
+                        <button class="btn-icon md-nav" id="myDayNext" title="Next day"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div class="md-head-row sub">
+                        <span id="myDayFmt" class="att-chip"></span>
+                        <span id="myDayClock" class="md-clock"></span>
+                        <button class="btn btn-outline" id="myDayToday">Today</button>
+                    </div>
+                </div>
+
+                <p class="md-hint" style="margin-bottom: 1rem;">
+                    <i class="fas fa-lock"></i> Check in, breaks and check out are stamped by the server clock when you press the button. They cannot be typed or edited. If something is wrong, tell management.
+                </p>
+
+                <div id="myDayAlerts" class="md-alerts"></div>
+
+                <div class="card"><div class="card-body" id="myDayBody"></div></div>
+                <div class="card" style="margin-top: 1.25rem;"><div class="card-body" id="myDayNotes"></div></div>
+            </section>
+
+            <!-- Employees (admin) -->
             <section id="employees" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
@@ -157,7 +186,7 @@
                 </div>
             </section>
 
-            <!-- Departments -->
+            <!-- Departments (admin) -->
             <section id="departments" class="content-section">
                 <div class="section-header">
                     <div class="search-departments">
@@ -168,28 +197,25 @@
                 <div class="departments-grid" id="departmentsGrid"></div>
             </section>
 
-            <!-- Attendance -->
+            <!-- Attendance (admin day view) -->
             <section id="attendance" class="content-section">
                 <div class="section-header">
-                    <div class="date-filter"><input type="date" id="attendanceDate"></div>
-                    <button class="btn btn-success" id="markAttendanceBtn"><i class="fas fa-check"></i> Mark Attendance</button>
-                </div>
-                <div class="card">
-                    <div class="card-body">
-                        <table class="data-table" id="attendanceTable">
-                            <thead>
-                                <tr>
-                                    <th>Employee ID</th><th>Name</th><th>Department</th><th>Check In</th>
-                                    <th>Check Out</th><th>Hours Worked</th><th>Status</th><th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
+                    <div class="filter-group">
+                        <button class="btn-icon md-nav" id="attPrev" title="Previous day"><i class="fas fa-chevron-left"></i></button>
+                        <input type="date" id="attDate">
+                        <button class="btn-icon md-nav" id="attNext" title="Next day"><i class="fas fa-chevron-right"></i></button>
+                        <select id="attGroup"><option value="ALL">All groups</option></select>
+                    </div>
+                    <div class="filter-group">
+                        <select id="attPick"><option value="">Open a log for...</option></select>
+                        <button class="btn btn-primary" id="attOpenBtn">Open</button>
                     </div>
                 </div>
+                <div id="attSummary" class="att-summary"></div>
+                <div id="attAdminBody"></div>
             </section>
 
-            <!-- Performance -->
+            <!-- Performance (admin) -->
             <section id="performance" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
@@ -222,7 +248,7 @@
                 </div>
             </section>
 
-            <!-- Payroll -->
+            <!-- Payroll (admin) -->
             <section id="payroll" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
@@ -346,12 +372,12 @@
                 </div>
             </section>
 
-            <!-- Reports -->
+            <!-- Reports (admin) -->
             <section id="reports" class="content-section">
                 <div class="reports-grid">
                     <div class="report-card" onclick="generateReport('attendance')">
                         <div class="report-icon"><i class="fas fa-calendar-check"></i></div>
-                        <h3>Attendance Report</h3><p>Daily, weekly, and monthly attendance summaries</p>
+                        <h3>Attendance Report</h3><p>This month's check-ins, breaks and worked hours</p>
                     </div>
                     <div class="report-card" onclick="generateReport('performance')">
                         <div class="report-icon"><i class="fas fa-chart-line"></i></div>
@@ -376,7 +402,7 @@
                 </div>
             </section>
 
-            <!-- Settings -->
+            <!-- Settings (admin) -->
             <section id="settings" class="content-section">
                 <div class="settings-grid">
                     <div class="card">
@@ -493,7 +519,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label>Employee ID * (used to log in)</label>
-                            <input type="text" name="employeeId" required class="form-control" pattern="[A-Za-z0-9._\-]+" title="Letters, digits, dot, underscore and hyphen only" autocapitalize="none">
+                            <input type="text" name="employeeId" required class="form-control" pattern="[A-Za-z0-9_\-]+" title="Letters, digits, underscore and hyphen only" autocapitalize="none">
                         </div>
                         <div class="form-group"><label>Join Date *</label><input type="date" name="joinDate" required class="form-control"></div>
                     </div>
@@ -534,8 +560,14 @@
                         </div>
                     </div>
                     <div class="form-row">
-                        <div class="form-group"><label>Location</label><input type="text" name="location" class="form-control" value="General"></div>
-                        <div class="form-group"><label>Log Type</label><input type="text" name="logType" class="form-control" value="Logs"></div>
+                        <div class="form-group"><label>Location / Group</label><input type="text" name="location" class="form-control" value="General"></div>
+                        <div class="form-group">
+                            <label>Log type</label>
+                            <select name="logType" class="form-control">
+                                <option value="Logs">Standard (SK): check in/out + 2 breaks</option>
+                                <option value="Logs_SDI">SDI: line in/out + 3 breaks + checklist + tasks</option>
+                            </select>
+                        </div>
                     </div>
                     <div class="form-group"><label>Bio / Notes</label><textarea name="bio" rows="2" class="form-control"></textarea></div>
 
@@ -614,37 +646,16 @@
         </div>
     </div>
 
-    <!-- Attendance Modal -->
-    <div class="modal" id="attendanceModal">
-        <div class="modal-content">
+    <!-- Log Modal (admin: view / correct an employee's day + notes) -->
+    <div class="modal" id="logModal">
+        <div class="modal-content modal-large">
             <div class="modal-header">
-                <h3 id="attendanceModalTitle">Mark Attendance</h3>
-                <button class="modal-close" onclick="closeModal('attendanceModal')">&times;</button>
+                <h3 id="logModalTitle">Log</h3>
+                <button class="modal-close" onclick="closeLogModal()">&times;</button>
             </div>
             <div class="modal-body">
-                <form id="attendanceForm">
-                    <div class="form-group">
-                        <label>Employee *</label>
-                        <select name="employee" id="attendanceEmployee" required class="form-control"><option value="">Select Employee</option></select>
-                    </div>
-                    <div class="form-group"><label>Date *</label><input type="date" name="date" required class="form-control"></div>
-                    <div class="form-row">
-                        <div class="form-group"><label>Check In</label><input type="time" name="checkIn" value="09:00" class="form-control"></div>
-                        <div class="form-group"><label>Check Out</label><input type="time" name="checkOut" value="18:00" class="form-control"></div>
-                    </div>
-                    <div class="form-group">
-                        <label>Status</label>
-                        <select name="status" class="form-control">
-                            <option value="present">Present</option>
-                            <option value="late">Late</option>
-                            <option value="absent">Absent</option>
-                        </select>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" onclick="closeModal('attendanceModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save</button>
-                    </div>
-                </form>
+                <div id="logModalBody"></div>
+                <div id="logModalNotes" style="margin-top: 1.25rem;"></div>
             </div>
         </div>
     </div>
@@ -749,6 +760,6 @@
         </div>
     </div>
 
-    <script type="module" src="script.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
