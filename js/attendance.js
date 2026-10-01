@@ -1,6 +1,6 @@
 import {
     db, ref, get, set, push, remove, update, onValue, query, orderByKey, startAt, endAt, serverTimestamp,
-    state, bus, $, on, esc, avatar, isAdmin, fullNameOf, todayStr, timeNow, addDays, nowMs, WORK_TZ,
+    state, bus, $, on, esc, avatar, isAdmin, isLeader, isManager, fullNameOf, todayStr, timeNow, addDays, nowMs, WORK_TZ,
     showToast, updateNotifications
 } from './core.js';
 import { shiftFor, groupFor } from './schedule.js';
@@ -86,14 +86,14 @@ function bindEditor(container, getCtx) {
         if (!ctx) return;
         try {
             if (b.dataset.act === 'step') await stamp(ctx, b.dataset.field, b);
-            else if (b.dataset.act === 'clear' && isAdmin()) await writeLog(ctx, { [b.dataset.field]: null });
+            else if (b.dataset.act === 'clear' && isManager()) await writeLog(ctx, { [b.dataset.field]: null });
             else if (b.dataset.act === 'save-details') await saveDetails(container, ctx);
         } catch (err) { showToast('Could not save: ' + err.message, 'error'); }
     });
-    // Manual time corrections exist only for admins (the inputs are not rendered for employees)
+    // Manual time corrections exist only for managers (the inputs are not rendered for employees)
     container.addEventListener('change', async e => {
         const i = e.target.closest('input[data-time]');
-        if (!i || !isAdmin()) return;
+        if (!i || !isManager()) return;
         const ctx = getCtx();
         if (!ctx) return;
         try { await writeLog(ctx, { [i.dataset.time]: i.value || null }); }
@@ -108,7 +108,7 @@ function safeRender(el, html) {
     el.innerHTML = html;
 }
 
-// ==================== Editor markup (shared by My Day and the admin log window) ====================
+// ==================== Editor markup (shared by My Day and the manager log window) ====================
 function detailsHTML(log, fmt, canText) {
     const dis = canText ? '' : 'disabled';
     const save = canText ? '<button class="btn btn-success" data-act="save-details"><i class="fas fa-floppy-disk"></i> Save details</button>' : '';
@@ -126,7 +126,7 @@ function detailsHTML(log, fmt, canText) {
         ${save}</div>`;
 }
 
-// o: { mode: 'employee' | 'admin', stampable, canText }
+// o: { mode: 'employee' | 'admin', stampable, canText }   ('admin' mode = manager corrections)
 function editorHTML(log, fmt, o) {
     log = log || {};
     const steps = stepsOf(fmt), first = FIRST[fmt], final = FINAL[fmt];
@@ -276,7 +276,20 @@ function watchAlerts() {
             updateNotifications();
             renderAdminDay();
         }, err => console.warn('replyAlerts', err));
-    } else if (u.employeeId) {
+        return;
+    }
+    if (isLeader()) {
+        // Leaders may read one date at a time (today and yesterday), filtered to their own group
+        const today = todayStr();
+        [today, addDays(today, -1)].forEach(d => onValue(ref(db, `replyAlerts/${d}`), snap => {
+            state.replyAlertMap[d] = snap.val() || {};
+            const mine = new Set(state.employees.map(e => e.employeeId));
+            state.alerts.replies = Object.values(state.replyAlertMap).reduce((s, m) => s + Object.keys(m || {}).filter(e => mine.has(e)).length, 0);
+            updateNotifications();
+            renderAdminDay();
+        }, err => console.warn('replyAlerts', err)));
+    }
+    if (u.employeeId) {
         onValue(ref(db, `noteAlerts/${u.employeeId}`), snap => {
             const map = snap.val() || {};
             state.noteAlertDates = Object.keys(map).sort();
@@ -289,7 +302,7 @@ function watchAlerts() {
     }
 }
 
-// ==================== Admin: day view + log window ====================
+// ==================== Manager: day view + log window ====================
 const adm = { date: todayStr(), logs: {}, unsub: null, group: 'ALL' };
 let modalCtx = null, modalUnsub = null, modalNotesUnsub = null;
 
@@ -306,8 +319,18 @@ const shiftPriority = s => {
 function subscribeAdminDay() {
     adm.unsub && adm.unsub();
     $('attDate').value = adm.date;
-    adm.unsub = onValue(ref(db, `attendanceLogs/${adm.date}`), snap => { adm.logs = snap.val() || {}; renderAdminDay(); },
-        err => console.warn('attendanceLogs', err));
+    if (isAdmin()) {
+        adm.unsub = onValue(ref(db, `attendanceLogs/${adm.date}`), snap => { adm.logs = snap.val() || {}; renderAdminDay(); },
+            err => console.warn('attendanceLogs', err));
+        return;
+    }
+    // Leaders: one listener per member of their groups (the rules only allow those)
+    adm.logs = {};
+    const unsubs = state.employees.map(e => onValue(logRef(adm.date, e.employeeId), snap => {
+        if (snap.exists()) adm.logs[e.employeeId] = snap.val(); else delete adm.logs[e.employeeId];
+        renderAdminDay();
+    }, err => console.warn('log read', e.employeeId, err)));
+    adm.unsub = () => unsubs.forEach(u => u());
 }
 
 function openAdminAttendance() { fillPick(); subscribeAdminDay(); }
@@ -326,7 +349,7 @@ function fillPick() {
 
 function renderAdminDay() {
     const box = $('attAdminBody');
-    if (!box || !isAdmin()) return;
+    if (!box || !isManager()) return;
 
     const people = state.employees.filter(e => e.status === 'active').map(e => {
         const name = fullNameOf(e);
@@ -424,5 +447,8 @@ export function initAttendance() {
 
     bus.on('section', id => { if (id === 'myday') openMyDay(); else if (id === 'attendance') openAdminAttendance(); });
     bus.on('schedule:loaded', () => { renderMyDay(); renderAdminDay(); });
-    bus.on('data:changed', () => { fillPick(); renderAdminDay(); });
+    bus.on('data:changed', () => {
+        fillPick();
+        if (isLeader() && $('attendance').classList.contains('active')) subscribeAdminDay(); else renderAdminDay();
+    });
 }
