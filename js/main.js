@@ -1,5 +1,5 @@
 import {
-    state, bus, db, ref, get, $, on, avatar, isAdmin, isManager, api, closeModal, showSection,
+    state, bus, db, ref, get, $, on, avatar, isAdmin, api, closeModal, showSection,
     updateNotifications, applyRoles, enableFeature, auditLog
 } from './core.js';
 import { initAuth, initAuthUI } from './auth.js';
@@ -16,6 +16,7 @@ import { initPerformance, renderPerformance } from './performance.js';
 import { initPayroll, renderPayroll, viewPayslip, processPayment } from './payroll.js';
 import { initDashboard, renderDashboard } from './dashboard.js';
 import { initReports, generateReport } from './reports.js';
+import { initNotifications } from './notifications.js';
 
 // ---------- Functions used by inline onclick="..." in index.html ----------
 Object.assign(window, {
@@ -63,9 +64,7 @@ async function upgradeRole() {
     try {
         const p = (await get(ref(db, `users/${u.uid}`))).val() || {};
         u.rawRole = String(p.role || 'USER').toUpperCase();
-        const groups = p.leaderGroups
-            ? String(p.leaderGroups).split(',')
-            : Object.keys(p.groups || {});
+        const groups = p.leaderGroups ? String(p.leaderGroups).split(',') : Object.keys(p.groups || {});
         u.leaderGroups = groups.map(s => s.trim()).filter(Boolean);
         if (u.rawRole === 'LEADER') u.role = 'leader';
     } catch (err) { console.warn('Could not read the raw role', err); }
@@ -101,7 +100,7 @@ async function initializeData() {
     fetchSchedule();
 }
 
-// ---------- Shell (menu, drawer, bell, modals) ----------
+// ---------- Shell (menu, drawer, modals). The bell is handled by notifications.js ----------
 function setupShell() {
     document.querySelectorAll('.menu li').forEach(item => {
         item.addEventListener('click', e => { e.preventDefault(); showSection(item.dataset.section); });
@@ -110,12 +109,6 @@ function setupShell() {
     document.addEventListener('click', e => {
         const sb = document.querySelector('.sidebar');
         if (sb.classList.contains('active') && !e.target.closest('.sidebar') && !e.target.closest('#menuToggle')) sb.classList.remove('active');
-    });
-
-    on('notifications', 'click', () => {
-        const a = state.alerts;
-        if (isAdmin()) showSection(a.replies > 0 ? 'attendance' : a.notices > 0 ? 'notices' : 'leave');
-        else showSection(a.notes > 0 ? 'myday' : a.notices > 0 ? 'notices' : 'myday');
     });
 
     const closeAny = modal => (modal.id === 'logModal' ? closeLogModal() : modal.classList.remove('active'));
@@ -145,6 +138,7 @@ async function startApp() {
     initPayroll();
     initDashboard();
     initReports();
+    initNotifications();    // after chat / leave / attendance, it reads what they publish in state
     watchTables();
 
     initializeData();
