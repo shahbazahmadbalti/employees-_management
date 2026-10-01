@@ -1,4 +1,7 @@
-import { db, ref, get, update, serverTimestamp, state, bus, $, on, avatar, getPref, setPref, showToast, closeModal } from './core.js';
+import {
+    db, ref, get, set, update, serverTimestamp, state, bus, $, on, avatar, photoKey,
+    getPref, setPref, showToast, closeModal
+} from './core.js';
 
 export const features = ['prefs'];
 
@@ -6,7 +9,7 @@ const me = () => state.currentUser.employeeId;
 let pendingImage = null;
 
 // ---------- Photo helper: centre-crop to a small square JPEG ----------
-function resizeToSquare(file, size = 160) {
+function resizeToSquare(file, size = 112) {
     return new Promise((resolve, reject) => {
         const img = new Image(), url = URL.createObjectURL(file);
         img.onload = () => {
@@ -15,11 +18,17 @@ function resizeToSquare(file, size = 160) {
             const s = Math.min(img.width, img.height);
             c.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, size, size);
             URL.revokeObjectURL(url);
-            resolve(c.toDataURL('image/jpeg', 0.8));
+            resolve(c.toDataURL('image/jpeg', 0.75));
         };
         img.onerror = reject;
         img.src = url;
     });
+}
+
+// Publishes the photo where every screen (and the login-page roster) can read it
+async function publishPhoto(image) {
+    await set(ref(db, `publicAvatars/${photoKey(state.currentUser.name)}`), { eid: me(), image });
+    state.photos[photoKey(state.currentUser.name)] = image;
 }
 
 // ---------- My profile ----------
@@ -28,13 +37,12 @@ async function openProfile() {
     const F = $('profileForm').elements;
     pendingImage = null;
     $('profileForm').reset();
-    $('profileAvatarPreview').src = $('headerAvatar').src;
+    $('profileAvatarPreview').src = avatar(state.currentUser.name);
     try {
         const p = (await get(ref(db, `userProfiles/${me()}`))).val() || {};
         F.phone.value = p.phone || '';
         F.email.value = p.email || '';
         F.address.value = p.address || '';
-        if (p.image) $('profileAvatarPreview').src = p.image;
     } catch (err) { console.warn('profile read failed', err); }
     $('profileModal').classList.add('active');
 }
@@ -45,7 +53,11 @@ async function saveProfile() {
     if (pendingImage) data.image = pendingImage;
     try {
         await update(ref(db, `userProfiles/${me()}`), data);
-        if (pendingImage) $('headerAvatar').src = pendingImage;
+        if (pendingImage) {
+            await publishPhoto(pendingImage);
+            $('headerAvatar').src = pendingImage;
+            bus.emit('data:changed');                     // redraw lists with the new photo
+        }
         closeModal('profileModal');
         showToast('Profile saved', 'success');
     } catch (err) { showToast('Could not save profile: ' + err.message, 'error'); }
@@ -117,16 +129,22 @@ export async function init() {
         catch (err) { showToast('Could not read that image', 'error'); }
     });
 
-    // Header avatar opens the profile and shows the saved photo
+    // Header avatar opens the profile
     const av = $('headerAvatar');
     av.style.cursor = 'pointer';
     av.title = 'My profile';
     av.addEventListener('click', openProfile);
-    if (me()) {
+
+    // A photo saved before the shared store existed: publish it once
+    if (me() && !state.photos[photoKey(state.currentUser.name)]) {
         try {
             const image = (await get(ref(db, `userProfiles/${me()}/image`))).val();
-            if (image) av.src = image;
-        } catch (err) { /* no photo yet */ }
+            if (image) {
+                await publishPhoto(image);
+                av.src = image;
+                bus.emit('data:changed');
+            }
+        } catch (err) { /* no photo, or the name is already taken by someone else */ }
     }
     return {};
 }
