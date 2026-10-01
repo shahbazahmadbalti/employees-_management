@@ -73,6 +73,7 @@ async function openEmployeeModal(emp = null) {
         F.address.value = emp.address || '';
         F.status.value = emp.status || 'active';
         F.logType.value = emp.logType || 'Logs';
+        F.leaderGroups.value = '';
         F.password.value = '';
         F.password.required = false;
         if (emp.uid) {
@@ -87,6 +88,7 @@ async function openEmployeeModal(emp = null) {
         try {
             const profile = await api(`/profile_extensions/${profileKey(fullNameOf(emp))}`);
             F.role.value = profile.role || 'USER';
+            F.leaderGroups.value = profile.leaderGroups || '';
             F.location.value = profile.location || 'General';
             F.bio.value = profile.bio || '';
             if (profile.logType) F.logType.value = profile.logType;
@@ -156,7 +158,7 @@ async function saveEmployee() {
     const profileData = {
         address: employeeData.address, bio: F.bio.value || '', email: employeeData.email,
         image: avatar(fullName), location: F.location.value || 'General', logType,
-        phone: employeeData.phone, role,
+        phone: employeeData.phone, role, leaderGroups: leaderGroups.join(', '),
         password: null, passwordHash: null, salt: null, iterations: null, hashAlgo: null
     };
 
@@ -178,9 +180,12 @@ async function saveEmployee() {
 
         if (uid) {
             await api(`/users/${uid}`, 'PUT', {
-                employeeId, employeeKey: saved.id, name: fullName, role, logType,
-                status: employeeData.status === 'active' ? 'active' : 'inactive'
-            });
+    employeeId, employeeKey: saved.id, name: fullName, role, logType,
+    leaderGroups: leaderGroups.join(', ') || null,
+    groups: leaderGroups.length ? Object.fromEntries(leaderGroups.map(g => [g.replace(/[.#$\\\[\\\\]\/]/g, '_'), true])) : null,
+    status: employeeData.status === 'active' ? 'active' : 'inactive'
+});
+
         }
 
         await api(`/profile_extensions/${profileKey(fullName)}`, 'PUT', profileData);
@@ -282,7 +287,9 @@ export function renderUsers() {
     if (!tbody) return;
     tbody.innerHTML = state.employees.map(emp => {
         const profile = state.profiles.find(p => p.id === profileKey(fullNameOf(emp)));
-        const role = String(profile?.role || 'USER').toUpperCase() === 'ADMIN' ? 'Administrator' : 'Employee';
+        const r = String(profile?.role || 'USER').toUpperCase();
+const role = r === 'ADMIN' ? 'Administrator' : r === 'LEADER' ? 'Leader' : 'Employee';
+
         return `<tr>
             <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
             <td>${role}</td><td>${esc(emp.employeeId)}</td>
