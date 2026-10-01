@@ -135,7 +135,6 @@ async function saveEmployee() {
     const newPassword = F.password.disabled ? '' : F.password.value;
     const role = ['ADMIN', 'LEADER'].includes(F.role.value) ? F.role.value : 'USER';
     const leaderGroups = role === 'LEADER' ? (F.leaderGroups.value || '').split(',').map(s => s.trim()).filter(Boolean) : [];
-
     const logType = F.logType.value === 'Logs_SDI' ? 'Logs_SDI' : 'Logs';
     const needsLogin = !existing || !existing.uid;
     const creatingLogin = needsLogin && !!newPassword;
@@ -146,6 +145,7 @@ async function saveEmployee() {
     if (newPassword && newPassword.length < 6) return showToast('Password must be at least 6 characters', 'error');
     if ((creatingLogin || !editId) && !ID_PATTERN.test(employeeId))
         return showToast('Employee ID may contain only letters, digits, underscore and hyphen', 'error');
+    if (role === 'LEADER' && !leaderGroups.length) return showToast('Enter at least one group for the leader', 'error');
 
     const employeeData = {
         firstName, lastName, employeeId, logType,
@@ -180,12 +180,11 @@ async function saveEmployee() {
 
         if (uid) {
             await api(`/users/${uid}`, 'PUT', {
-    employeeId, employeeKey: saved.id, name: fullName, role, logType,
-    leaderGroups: leaderGroups.join(', ') || null,
-    groups: leaderGroups.length ? Object.fromEntries(leaderGroups.map(g => [g.replace(/[.#$\\\[\\\\]\/]/g, '_'), true])) : null,
-    status: employeeData.status === 'active' ? 'active' : 'inactive'
-});
-
+                employeeId, employeeKey: saved.id, name: fullName, role, logType,
+                leaderGroups: leaderGroups.join(', ') || null,
+                groups: leaderGroups.length ? Object.fromEntries(leaderGroups.map(g => [g.replace(/[.#$\\[\\]\/]/g, '_'), true])) : null,
+                status: employeeData.status === 'active' ? 'active' : 'inactive'
+            });
         }
 
         await api(`/profile_extensions/${profileKey(fullName)}`, 'PUT', profileData);
@@ -288,8 +287,7 @@ export function renderUsers() {
     tbody.innerHTML = state.employees.map(emp => {
         const profile = state.profiles.find(p => p.id === profileKey(fullNameOf(emp)));
         const r = String(profile?.role || 'USER').toUpperCase();
-const role = r === 'ADMIN' ? 'Administrator' : r === 'LEADER' ? 'Leader' : 'Employee';
-
+        const role = r === 'ADMIN' ? 'Administrator' : r === 'LEADER' ? 'Leader' : 'Employee';
         return `<tr>
             <td><div class="user-info"><img src="${avatar(fullNameOf(emp))}" alt=""><span>${esc(fullNameOf(emp))}</span></div></td>
             <td>${role}</td><td>${esc(emp.employeeId)}</td>
