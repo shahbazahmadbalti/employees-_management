@@ -11,8 +11,10 @@ export function shiftFor(name, dateStr) {
     return area ? String(area).trim() : '';
 }
 
-// First group/segment of a person (Sheets location first, profile location as a fallback)
+// First group/segment of a person: directory first, then Sheets location, then profile location
 export function groupFor(name) {
+    const entry = Object.values(state.directory || {}).find(p => sameName(p.name, name));
+    if (entry && entry.group) return entry.group;
     const key = Object.keys(state.employeeLocations || {}).find(k => sameName(k, name));
     let loc = key ? state.employeeLocations[key] : null;
     if (!loc) loc = state.profiles.find(p => p.id === profileKey(name))?.location;
