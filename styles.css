@@ -810,3 +810,29 @@ body.role-admin button.manager-only, body.role-leader button.manager-only { disp
 /* ==================== Features that switch on later (JS removes .soon) ==================== */
 /* keep this LAST so it wins over the role rules above */
 html body .soon.soon.soon { display: none !important; }
+
+/* ===== Report required before check-out ===== */
+.form-control.needs-report { border-color: var(--danger-color); box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18); }
+
+/* ===== Dashboard day picker ===== */
+.date-nav { display: flex; align-items: center; gap: 0.35rem; }
+.date-nav input[type="date"] { padding: 0.4rem 0.6rem; border: 1px solid var(--gray-300); border-radius: 8px; font: inherit; font-size: 0.85rem; min-height: 38px; }
+
+/* ===== Notification center (bell list) ===== */
+.notif-panel { position: fixed; right: 1rem; top: 70px; width: min(390px, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto; background: white; border: 1px solid var(--gray-200); border-radius: 14px; box-shadow: var(--box-shadow-lg); z-index: 1500; display: none; }
+.notif-head { display: flex; justify-content: space-between; align-items: center; padding: 0.85rem 1rem; border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; background: white; }
+.notif-head span { font-size: 0.78rem; color: var(--gray-500); }
+.notif-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.8rem 1rem; border-bottom: 1px solid var(--gray-100); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.notif-item:last-child { border-bottom: none; }
+.notif-item:hover { background: var(--gray-50); }
+.notif-ico { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; color: white; flex-shrink: 0; font-size: 0.95rem; }
+.notif-ico.chat { background: #4F46E5; }
+.notif-ico.notice { background: #F59E0B; }
+.notif-ico.note { background: #10B981; }
+.notif-ico.reply { background: #3B82F6; }
+.notif-ico.leave { background: #8B5CF6; }
+.notif-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.notif-main strong { font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif-main span { font-size: 0.78rem; color: var(--gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif-item small { color: var(--gray-400); font-size: 0.68rem; flex-shrink: 0; }
+.notif-empty { padding: 2rem 1rem; text-align: center; color: var(--gray-500); }
