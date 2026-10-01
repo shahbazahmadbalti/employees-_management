@@ -112,12 +112,16 @@
                 <div class="dashboard-grid">
                     <div class="card">
                         <div class="card-header">
-                            <h3>Recent Employees</h3>
-                            <a href="#" class="view-all" onclick="showSection('employees'); return false;">View All</a>
+                            <h3>Attendance by Day</h3>
+                            <div class="date-nav">
+                                <button class="btn-icon" id="dashPrev" title="Previous day"><i class="fas fa-chevron-left"></i></button>
+                                <input type="date" id="dashDate">
+                                <button class="btn-icon" id="dashNext" title="Next day"><i class="fas fa-chevron-right"></i></button>
+                            </div>
                         </div>
                         <div class="card-body">
                             <table class="data-table" id="recentEmployeesTable">
-                                <thead><tr><th>Name</th><th>Department</th><th>Position</th><th>Status</th></tr></thead>
+                                <thead><tr><th>Name</th><th>Department</th><th>Check In</th><th>Check Out</th><th>Status</th></tr></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
@@ -157,10 +161,6 @@
                         <button class="btn btn-outline" id="myDayToday">Today</button>
                     </div>
                 </div>
-
-                <p class="md-hint" style="margin-bottom: 1rem;">
-                    <i class="fas fa-lock"></i> Check in, breaks and check out are stamped by the server clock when you press the button. They cannot be typed or edited. If something is wrong, tell management.
-                </p>
 
                 <div id="myDayAlerts" class="md-alerts"></div>
 
@@ -337,6 +337,7 @@
             <section id="leave" class="content-section">
                 <div class="section-header">
                     <div class="filter-group">
+                        <select id="leaveEmployeeFilter" style="display:none"><option value="">All employees</option></select>
                         <select id="leaveStatus">
                             <option value="">All Status</option>
                             <option value="pending">Pending</option>
@@ -350,10 +351,12 @@
                             <option value="annual">Annual Leave</option>
                             <option value="maternity">Maternity Leave</option>
                         </select>
+                        <button class="btn btn-outline admin-only" id="editAllowanceBtn"><i class="fas fa-sliders"></i> Edit entitlement</button>
                     </div>
                     <button class="btn btn-primary" id="requestLeaveBtn"><i class="fas fa-plus"></i> Request Leave</button>
                 </div>
 
+                <p class="md-hint" id="leaveBalanceTitle" style="margin-bottom: .75rem;"></p>
                 <div class="leave-stats">
                     <div class="leave-stat-card" data-type="sick">
                         <h4>Sick Leave</h4>
@@ -802,6 +805,28 @@
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('leaveModal')">Cancel</button>
                         <button type="submit" class="btn btn-primary">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leave entitlement (admin) -->
+    <div class="modal" id="allowanceModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Leave entitlement</h3>
+                <button class="modal-close" onclick="closeModal('allowanceModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="allowanceForm">
+                    <p class="md-hint" id="allowanceName" style="margin-bottom: 1rem; font-weight: 600;"></p>
+                    <div class="form-group"><label>Sick leave (days per year)</label><input type="number" name="sick" min="0" max="366" required class="form-control"></div>
+                    <div class="form-group"><label>Casual leave (days per year)</label><input type="number" name="casual" min="0" max="366" required class="form-control"></div>
+                    <div class="form-group"><label>Annual leave / holiday (days per year)</label><input type="number" name="annual" min="0" max="366" required class="form-control"></div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal('allowanceModal')">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Save</button>
                     </div>
                 </form>
             </div>
