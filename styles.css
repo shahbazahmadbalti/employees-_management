@@ -882,3 +882,269 @@ label.btn { cursor: pointer; }
 .md-blocked div { display: flex; flex-direction: column; gap: 0.15rem; }
 .md-blocked span { font-size: 0.85rem; color: #b91c1c; }
 
+
+/* ==================== Responsive Schedule ==================== */
+
+/* Keep schedule horizontal scrolling inside its card, not the full page */
+#schedule .card {
+    max-width: 100%;
+}
+
+#schedule .card-body {
+    overflow-x: auto !important;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+
+/* Better desktop schedule cells */
+.schedule-grid {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.schedule-grid th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 0.7rem 0.35rem;
+    font-size: 0.72rem;
+    color: var(--gray-600);
+}
+
+.schedule-grid td {
+    min-width: 48px;
+    height: 58px;
+    padding: 0.2rem;
+    border-bottom: 1px solid var(--gray-100);
+    border-right: 1px solid var(--gray-100);
+}
+
+.schedule-grid tr:hover td {
+    background: #fafbff;
+}
+
+.schedule-grid .schedule-weekend {
+    color: var(--danger-color);
+    background: #fff7f7;
+}
+
+.schedule-name-head,
+.schedule-name-cell {
+    box-shadow: 4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.schedule-total-head,
+.schedule-total-cell {
+    box-shadow: -4px 0 8px rgba(15, 23, 42, 0.06);
+}
+
+.schedule-name-cell span {
+    display: block;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shift-pill {
+    min-height: 31px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0.3rem;
+    border: 1px solid;
+    border-radius: 7px;
+    font-size: 0.68rem;
+    line-height: 1.15;
+    font-weight: 800;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+}
+
+/* Strong visual differentiation */
+.shift-night {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 4px rgba(49, 46, 129, 0.24);
+}
+
+.shift-holiday {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.schedule-empty-cell {
+    background: rgba(248, 250, 252, 0.45);
+}
+
+/* Schedule toolbar: desktop */
+#schedule > .section-header {
+    align-items: center !important;
+}
+
+#schedule > .section-header > div {
+    flex-wrap: wrap !important;
+}
+
+#schedule select {
+    max-width: 260px;
+}
+
+/* ==================== Mobile Schedule ==================== */
+@media (max-width: 768px) {
+    #schedule > .section-header {
+        display: grid !important;
+        grid-template-columns: 1fr;
+        gap: 0.85rem !important;
+        padding: 1rem !important;
+        border-radius: 16px !important;
+    }
+
+    /* Both inline toolbar groups become stacked responsive blocks */
+    #schedule > .section-header > div {
+        display: grid !important;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center !important;
+        gap: 0.65rem !important;
+        width: 100%;
+    }
+
+    /* Duna Hub heading spans all columns */
+    #schedule > .section-header > div:first-child > span:first-child {
+        grid-column: 1 / -1;
+        font-size: 1.1rem;
+        margin-bottom: 0.1rem;
+    }
+
+    /* Month/year controls each use half a row */
+    #schedule > .section-header > div:first-child {
+        grid-template-columns: 1fr 1fr !important;
+    }
+
+    #schedule > .section-header > div:first-child > span:first-child {
+        grid-column: 1 / -1;
+    }
+
+    #schedule > .section-header > div:first-child select {
+        width: 100%;
+        min-width: 0;
+    }
+
+    /* Location + employee labels and controls */
+    #schedule > .section-header > div:nth-child(2) {
+        grid-template-columns: 86px minmax(0, 1fr) !important;
+    }
+
+    #schedule > .section-header > div:nth-child(2) span {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        color: #cbd5e1;
+    }
+
+    #schedule > .section-header > div:nth-child(2) select {
+        width: 100%;
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    /* Refresh becomes a full-width action */
+    #schedule #refreshScheduleBtn {
+        grid-row: auto;
+        width: 100%;
+        margin: 0 !important;
+        min-height: 44px;
+    }
+
+    /* Phone-sized swipeable calendar */
+    #schedule .card {
+        margin-top: 1rem !important;
+        border-radius: 16px;
+    }
+
+    #schedule .card-body {
+        padding: 0 !important;
+        overflow-x: auto !important;
+    }
+
+    #scheduleTable {
+        min-width: 1750px !important;
+        font-size: 11px !important;
+    }
+
+    .schedule-grid th {
+        height: 45px;
+        padding: 0.5rem 0.2rem;
+        font-size: 0.68rem;
+    }
+
+    .schedule-grid td {
+        min-width: 54px;
+        height: 64px;
+        padding: 0.18rem;
+    }
+
+    .schedule-name-head,
+    .schedule-name-cell {
+        width: 132px !important;
+        min-width: 132px !important;
+    }
+
+    .schedule-name-cell {
+        font-size: 0.72rem !important;
+        padding: 0.45rem !important;
+    }
+
+    .schedule-name-cell span {
+        max-width: 118px;
+        white-space: normal;
+        line-height: 1.2;
+    }
+
+    .schedule-total-head,
+    .schedule-total-cell {
+        width: 58px !important;
+        min-width: 58px !important;
+    }
+
+    .schedule-total-cell {
+        font-size: 0.75rem !important;
+    }
+
+    .shift-pill {
+        min-height: 38px;
+        padding: 0.2rem;
+        border-radius: 6px;
+        font-size: 0.61rem;
+        white-space: normal;
+        overflow: hidden;
+        word-break: break-word;
+        line-height: 1.08;
+    }
+}
+
+@media (max-width: 390px) {
+    #schedule > .section-header {
+        padding: 0.8rem !important;
+    }
+
+    #schedule > .section-header > div:nth-child(2) {
+        grid-template-columns: 76px minmax(0, 1fr) !important;
+    }
+
+    .schedule-name-head,
+    .schedule-name-cell {
+        width: 116px !important;
+        min-width: 116px !important;
+    }
+
+    .schedule-name-cell span {
+        max-width: 103px;
+    }
+
+    .schedule-grid td {
+        min-width: 50px;
+    }
+}
+
