@@ -42,15 +42,19 @@ function buildItems() {
         go: () => showSection('notices')
     }));
 
-    // Tasks: new assignments and completions
-    (state.taskAlerts || []).forEach(a => items.push(a.kind === 'assigned' ? {
-        type: 'task', icon: 'fa-list-check', title: `New task: ${a.title}`,
-        text: `from ${a.byName || 'management'}${a.due ? ` · due ${a.due}` : ''}`, ts: a.ts,
-        go: () => { bus.emit('tasks:open', { id: a.id }); showSection('tasks'); }
-    } : {
-        type: 'task', icon: 'fa-circle-check', title: `${a.who} completed "${a.title}"`, text: 'Task completed', ts: a.ts,
-        go: () => { bus.emit('tasks:open', { id: a.id, scope: 'created' }); showSection('tasks'); }
-    }));
+        // Tasks: new assignments, new files on my task, completions, files uploaded back
+    (state.taskAlerts || []).forEach(a => {
+        const open = scope => () => { bus.emit('tasks:open', { id: a.id, scope }); showSection('tasks'); };
+        if (a.kind === 'assigned') items.push({ type: 'task', icon: 'fa-list-check', title: `New task: ${a.title}`,
+            text: `from ${a.byName || 'management'}${a.due ? ` · due ${a.due}` : ''}`, ts: a.ts, go: open() });
+        else if (a.kind === 'files') items.push({ type: 'task', icon: 'fa-paperclip', title: `New files on "${a.title}"`,
+            text: `from ${a.byName || 'management'}`, ts: a.ts, go: open() });
+        else if (a.kind === 'file') items.push({ type: 'task', icon: 'fa-file-arrow-up', title: `${a.who} uploaded a file`,
+            text: `${a.name} · ${a.title}`, ts: a.ts, go: open('created') });
+        else items.push({ type: 'task', icon: 'fa-circle-check', title: `${a.who} completed "${a.title}"`,
+            text: 'Task completed', ts: a.ts, go: open('created') });
+    });
+
 
     // Events: new invitations and today's reminders
     (state.eventAlerts || []).forEach(a => items.push({
