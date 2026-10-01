@@ -23,7 +23,7 @@ export const db = getDatabase(app);
 export const auth = getAuth(app);
 
 // ---------- Config ----------
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwYAWuJ-myQ-XaApdvfVWoH7scwDlQNl9IpNHOyAQyseG2OppccUXpv3tDDXMP-gHSq6Q/exec";
+export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwWONsvBSF8F_5Jds0vsPaG1rS6L-BwRKP9TIvtP_QhsJdA3TVjdjDLn6PCJuSkvk6bAw/exec";
 export const AUTH_EMAIL_DOMAIN = 'dunanetworks.com';      // must match login.html
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const WORK_TZ = 'Europe/Budapest';
