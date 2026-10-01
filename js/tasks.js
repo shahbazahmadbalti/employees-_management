@@ -1,11 +1,15 @@
 import {
     db, ref, get, set, update, remove, push, onValue, serverTimestamp,
-    state, bus, $, on, esc, isAdmin, isLeader, todayStr, fmtDateTime, showSection, showToast, closeModal, beep, auditLog
+    state, bus, $, on, esc, isAdmin, todayStr, fmtDateTime, showSection, showToast, closeModal, beep, auditLog
 } from './core.js';
+import { uploadTaskFile, openTaskFile, deleteTaskFile, humanSize, ACCEPT } from './files.js';
 
 export const features = [];
 
-const T = { inbox: {}, tasks: {}, taskSubs: {}, statusSubs: {}, statuses: {}, announced: new Set(), dir: null, startedAt: Date.now(), focus: null };
+const T = {
+    inbox: {}, tasks: {}, taskSubs: {}, statusSubs: {}, statuses: {}, fileSubs: {}, files: {},
+    announced: new Set(), dir: null, startedAt: Date.now(), focus: null
+};
 const me = () => state.currentUser.employeeId;
 const PRIORITY = { high: ['High', '#b91c1c', '#fee2e2'], normal: ['Normal', '#1e40af', '#dbeafe'], low: ['Low', '#4b5563', '#f3f4f6'] };
 const isMine = t => !!(t.assignees && t.assignees[me()]);
@@ -13,6 +17,8 @@ const canManage = t => isAdmin() || t.by === me();
 const overdue = t => !!t.due && t.due < todayStr();
 const myStatus = id => T.inbox[id]?.status || 'todo';
 const overallDone = id => { const s = Object.values(T.statuses[id] || {}); return s.length > 0 && s.every(x => x.status === 'done'); };
+const fileIcon = type => /^image\//.test(type) ? 'fa-file-image' : /pdf/.test(type) ? 'fa-file-pdf' : /word/.test(type) ? 'fa-file-word'
+    : /sheet|excel/.test(type) ? 'fa-file-excel' : /zip/.test(type) ? 'fa-file-zipper' : 'fa-file';
 
 // ---------- Page, menu item and dialog are built here (no index.html change needed) ----------
 function injectUI() {
@@ -32,7 +38,7 @@ function injectUI() {
             <div class="filter-group">
                 <select id="taskScope">
                     <option value="mine">Assigned to me</option>
-                    <option value="created" class="m-opt">Created by me</option>
+                    <option value="created">Created by me</option>
                     ${isAdmin() ? '<option value="all">All tasks</option>' : ''}
                 </select>
                 <select id="taskFilter"><option value="open">Open</option><option value="done">Done</option><option value="all">All</option></select>
@@ -57,12 +63,15 @@ function injectUI() {
                             <select name="priority" class="form-control"><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
                         <div class="form-group"><label>Due date</label><input type="date" name="due" class="form-control"></div>
                     </div>
+                    <div class="form-group"><label>Attach files (optional)</label>
+                        <input type="file" id="taskFiles" multiple accept="${ACCEPT}" class="form-control">
+                        <div id="taskFileList" class="md-hint"></div></div>
                     <div class="form-group"><label>Assign to *</label>
                         <div class="group-chips" id="taskGroupChips"></div>
                         <div class="pick-list" id="taskPeople"></div></div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" onclick="closeModal('taskModal')">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create task</button>
+                        <button type="submit" class="btn btn-primary" id="taskSubmitBtn">Create task</button>
                     </div>
                 </form>
             </div>
@@ -76,6 +85,16 @@ function watchStatuses(id) {
     T.statusSubs[id] = onValue(ref(db, `taskStatus/${id}`), s => { T.statuses[id] = s.val() || {}; render(); publishAlerts(); },
         err => console.warn('taskStatus', id, err));
 }
+function watchFiles(id) {
+    if (T.fileSubs[id]) return;
+    T.fileSubs[id] = onValue(ref(db, `taskFiles/${id}`), s => { T.files[id] = s.val() || {}; render(); publishAlerts(); },
+        err => console.warn('taskFiles', id, err));
+}
+function forget(id) {
+    delete T.tasks[id];
+    [T.statusSubs, T.fileSubs].forEach(m => { m[id]?.(); delete m[id]; });
+    delete T.statuses[id]; delete T.files[id];
+}
 
 function announce(id, t) {
     if (T.announced.has(id)) return;
@@ -88,20 +107,18 @@ function announce(id, t) {
 
 function syncSubs() {
     Object.keys(T.taskSubs).forEach(id => {
-        if (!T.inbox[id]) {
-            T.taskSubs[id](); delete T.taskSubs[id];
-            if (!isAdmin()) { delete T.tasks[id]; T.statusSubs[id]?.(); delete T.statusSubs[id]; delete T.statuses[id]; }
-        }
+        if (!T.inbox[id]) { T.taskSubs[id](); delete T.taskSubs[id]; if (!isAdmin()) forget(id); }
     });
     if (isAdmin()) return;                                   // admins read every task in one go (see init)
     Object.keys(T.inbox).forEach(id => {
         if (T.taskSubs[id]) return;
         T.taskSubs[id] = onValue(ref(db, `tasks/${id}`), snap => {
             const t = snap.val();
-            if (!t) { delete T.tasks[id]; }
+            if (!t) { forget(id); }
             else {
                 T.tasks[id] = t;
                 announce(id, t);
+                watchFiles(id);
                 if (t.by === me()) watchStatuses(id);
             }
             render(); publishAlerts();
@@ -109,17 +126,25 @@ function syncSubs() {
     });
 }
 
-// What the bell shows: new assignments for me, and completions of tasks I created
+// What the bell shows
 function publishAlerts() {
     const alerts = [];
     Object.entries(T.tasks).forEach(([id, t]) => {
-        if (isMine(t) && t.by !== me() && T.inbox[id] && !T.inbox[id].seenAt) {
+        const inbox = T.inbox[id];
+        if (isMine(t) && t.by !== me() && inbox && !inbox.seenAt) {
             alerts.push({ kind: 'assigned', id, title: t.title, byName: t.byName, due: t.due, ts: t.ts || 0 });
+        } else if (isMine(t) && t.by !== me() && inbox && inbox.filesSeen === false) {
+            alerts.push({ kind: 'files', id, title: t.title, byName: t.byName, ts: inbox.filesAt || 0 });
         }
         if (t.by === me()) {
             Object.entries(T.statuses[id] || {}).forEach(([eid, s]) => {
                 if (s.status === 'done' && !s.seenByOwner && eid !== me()) {
                     alerts.push({ kind: 'done', id, eid, title: t.title, who: s.name || eid, ts: s.updatedAt || 0 });
+                }
+            });
+            Object.values(T.files[id] || {}).forEach(f => {
+                if (f.role === 'deliverable' && !f.seen && f.by !== me()) {
+                    alerts.push({ kind: 'file', id, title: t.title, who: f.byName, name: f.name, ts: f.ts || 0 });
                 }
             });
         }
@@ -132,18 +157,41 @@ function publishAlerts() {
 
 function markSeen() {
     Object.entries(T.tasks).forEach(([id, t]) => {
-        if (isMine(t) && T.inbox[id] && !T.inbox[id].seenAt) {
-            update(ref(db, `taskInbox/${me()}/${id}`), { seenAt: serverTimestamp() }).catch(() => {});
+        const inbox = T.inbox[id];
+        if (isMine(t) && inbox && (!inbox.seenAt || inbox.filesSeen === false)) {
+            update(ref(db, `taskInbox/${me()}/${id}`), { seenAt: serverTimestamp(), filesSeen: true }).catch(() => {});
         }
         if (t.by === me()) {
             Object.entries(T.statuses[id] || {}).forEach(([eid, s]) => {
                 if (s.status === 'done' && !s.seenByOwner) update(ref(db, `taskStatus/${id}/${eid}`), { seenByOwner: true }).catch(() => {});
+            });
+            Object.entries(T.files[id] || {}).forEach(([fid, f]) => {
+                if (f.role === 'deliverable' && !f.seen) update(ref(db, `taskFiles/${id}/${fid}`), { seen: true }).catch(() => {});
             });
         }
     });
 }
 
 // ---------- Rendering ----------
+function fileRow(id, fid, f, t) {
+    return `<div class="file-row">
+        <i class="fas ${fileIcon(f.type)}"></i>
+        <div class="file-info"><strong>${esc(f.name)}</strong><small>${humanSize(f.size || 0)} &middot; ${esc(f.byName || f.by)} &middot; ${fmtDateTime(f.ts)}</small></div>
+        <button class="btn btn-outline" data-act="file-open" data-id="${esc(id)}" data-fid="${esc(fid)}"><i class="fas fa-up-right-from-square"></i> Open</button>
+        ${(f.by === me() || canManage(t)) ? `<button class="btn-icon" title="Delete file" data-act="file-del" data-id="${esc(id)}" data-fid="${esc(fid)}"><i class="fas fa-xmark"></i></button>` : ''}
+    </div>`;
+}
+
+function filesBlock(id, t) {
+    const all = Object.entries(T.files[id] || {}).sort((a, b) => (a[1].ts || 0) - (b[1].ts || 0));
+    const attachments = all.filter(([, f]) => f.role === 'attachment');
+    const uploads = all.filter(([, f]) => f.role === 'deliverable' && (canManage(t) || f.by === me()));
+    let html = '';
+    if (attachments.length) html += `<div class="file-group"><h5>Attachments</h5>${attachments.map(([fid, f]) => fileRow(id, fid, f, t)).join('')}</div>`;
+    if (uploads.length) html += `<div class="file-group"><h5>${canManage(t) ? 'Files uploaded back' : 'Your uploads'}</h5>${uploads.map(([fid, f]) => fileRow(id, fid, f, t)).join('')}</div>`;
+    return html;
+}
+
 function card(id, t, scope) {
     const [pLabel, pColor, pBg] = PRIORITY[t.priority] || PRIORITY.normal;
     const mineView = scope === 'mine';
@@ -158,8 +206,14 @@ function card(id, t, scope) {
             ? `<button class="btn btn-outline" data-act="reopen" data-id="${esc(id)}"><i class="fas fa-rotate-left"></i> Reopen</button>`
             : `${st === 'todo' ? `<button class="btn btn-outline" data-act="start" data-id="${esc(id)}"><i class="fas fa-play"></i> Start</button>` : ''}
                <button class="btn btn-success" data-act="done" data-id="${esc(id)}"><i class="fas fa-check"></i> Mark done</button>`;
+        actions += `<label class="btn btn-outline"><i class="fas fa-upload"></i> Upload file
+            <input type="file" multiple hidden accept="${ACCEPT}" data-upload="${esc(id)}" data-role="deliverable"></label>`;
     }
-    if (canManage(t)) actions += `<button class="btn btn-outline" data-act="delete" data-id="${esc(id)}"><i class="fas fa-trash"></i> Delete</button>`;
+    if (canManage(t)) {
+        actions += `<label class="btn btn-outline"><i class="fas fa-paperclip"></i> Add file
+            <input type="file" multiple hidden accept="${ACCEPT}" data-upload="${esc(id)}" data-role="attachment"></label>
+            <button class="btn btn-outline" data-act="delete" data-id="${esc(id)}"><i class="fas fa-trash"></i> Delete</button>`;
+    }
 
     const chips = !mineView ? `<div class="assignee-chips">${Object.entries(statuses).map(([eid, s]) =>
         `<span class="${esc(s.status)}">${esc(s.name || eid)} · ${esc(s.status)}</span>`).join('')}</div>` : '';
@@ -173,6 +227,7 @@ function card(id, t, scope) {
         </div>
         ${t.description ? `<div class="task-desc">${esc(t.description)}</div>` : ''}
         ${chips}
+        ${filesBlock(id, t)}
         <div class="task-actions">${actions}</div></div>`;
 }
 
@@ -193,6 +248,39 @@ function render() {
     }
 }
 
+// ---------- Files ----------
+async function uploadAll(taskId, files, role) {
+    let ok = 0;
+    for (const file of files) {
+        try {
+            showToast(`Uploading ${file.name}...`, 'info');
+            await uploadTaskFile(taskId, file, role);
+            ok++;
+        } catch (err) { showToast(err.message, 'error'); }
+    }
+    if (!ok) return;
+    showToast(`${ok} file${ok > 1 ? 's' : ''} uploaded`, 'success');
+    const t = T.tasks[taskId];
+    if (role === 'attachment' && t) {      // tell the assignees there is something new on their task
+        Object.keys(t.assignees || {}).filter(e => e !== me()).forEach(e =>
+            update(ref(db, `taskInbox/${e}/${taskId}`), { filesAt: serverTimestamp(), filesSeen: false }).catch(() => {}));
+    }
+    auditLog(role === 'deliverable' ? 'Task file uploaded' : 'Task file attached', `${t?.title || taskId}: ${ok} file(s)`);
+}
+
+async function openFile(id, fid) {
+    const meta = T.files[id]?.[fid];
+    if (!meta) return;
+    try { await openTaskFile(id, fid, meta); } catch (err) { showToast('Could not open the file: ' + err.message, 'error'); }
+}
+
+async function removeFile(id, fid) {
+    const meta = T.files[id]?.[fid];
+    if (!meta || !confirm(`Delete "${meta.name}"?`)) return;
+    try { await deleteTaskFile(id, fid, meta); showToast('File deleted', 'success'); }
+    catch (err) { showToast('Could not delete the file: ' + err.message, 'error'); }
+}
+
 // ---------- Actions ----------
 async function setStatus(id, status) {
     const t = T.tasks[id];
@@ -205,8 +293,11 @@ async function setStatus(id, status) {
 
 async function removeTask(id) {
     const t = T.tasks[id];
-    if (!confirm(`Delete the task "${t?.title || ''}" for everyone?`)) return;
+    if (!confirm(`Delete the task "${t?.title || ''}" and its files for everyone?`)) return;
     try {
+        await Promise.all(Object.entries(T.files[id] || {}).map(([fid, f]) => deleteTaskFile(id, fid, f).catch(() => {})));
+        await remove(ref(db, `taskFiles/${id}`));
+        await remove(ref(db, `taskFileData/${id}`));
         const people = new Set([...Object.keys(t?.assignees || {}), t?.by || me()]);
         await Promise.all([...people].map(e => remove(ref(db, `taskInbox/${e}/${id}`))));
         await remove(ref(db, `taskStatus/${id}`));
@@ -219,6 +310,7 @@ async function removeTask(id) {
 // ---------- Creating a task ----------
 async function openComposer() {
     $('taskForm').reset();
+    $('taskFileList').textContent = '';
     try { T.dir = (await get(ref(db, 'directory'))).val() || {}; } catch (err) { T.dir = {}; }
     const mine = state.currentUser.leaderGroups || [];
     const people = Object.entries(T.dir)
@@ -238,8 +330,11 @@ async function publish() {
     const F = $('taskForm').elements;
     const title = F.title.value.trim();
     const picked = [...document.querySelectorAll('.task-person:checked')].map(c => c.value);
+    const files = [...($('taskFiles').files || [])];
     if (!title) return showToast('A title is required', 'error');
     if (!picked.length) return showToast('Choose at least one person', 'error');
+    const btn = $('taskSubmitBtn');
+    btn.disabled = true;
     try {
         const id = push(ref(db, 'tasks')).key;
         await set(ref(db, `tasks/${id}`), {
@@ -253,10 +348,16 @@ async function publish() {
                                : { ts: serverTimestamp(), owner: true, seenAt: serverTimestamp() })));
         await Promise.all(picked.map(e => set(ref(db, `taskStatus/${id}/${e}`),
             { status: 'todo', name: T.dir?.[e]?.name || e, updatedAt: serverTimestamp(), seenByOwner: true })));
+        auditLog('Task created', `${title} -> ${picked.length} people`);
+
         closeModal('taskModal');
         showToast(`Task sent to ${picked.length} ${picked.length === 1 ? 'person' : 'people'}`, 'success');
-        auditLog('Task created', `${title} -> ${picked.length} people`);
+        if (files.length) {                       // files go up after the task exists (the rules need it)
+            T.tasks[id] = T.tasks[id] || { assignees: {}, by: me() };
+            await uploadAll(id, files, 'attachment');
+        }
     } catch (err) { showToast('Could not create the task: ' + err.message, 'error'); }
+    btn.disabled = false;
 }
 
 // ---------- Init (called by main.js) ----------
@@ -267,11 +368,11 @@ export async function init() {
     onValue(ref(db, `taskInbox/${me()}`), snap => { T.inbox = snap.val() || {}; syncSubs(); render(); publishAlerts(); },
         err => console.warn('task inbox', err));
 
-    if (isAdmin()) {      // admins see every task and its progress
+    if (isAdmin()) {      // admins see every task, its progress and its files
         onValue(ref(db, 'tasks'), snap => {
             const all = snap.val() || {};
-            Object.keys(T.tasks).forEach(id => { if (!all[id]) { delete T.tasks[id]; T.statusSubs[id]?.(); delete T.statusSubs[id]; delete T.statuses[id]; } });
-            Object.entries(all).forEach(([id, t]) => { T.tasks[id] = t; announce(id, t); watchStatuses(id); });
+            Object.keys(T.tasks).forEach(id => { if (!all[id]) forget(id); });
+            Object.entries(all).forEach(([id, t]) => { T.tasks[id] = t; announce(id, t); watchStatuses(id); watchFiles(id); });
             render(); publishAlerts();
         }, err => console.warn('tasks', err));
     }
@@ -280,6 +381,9 @@ export async function init() {
     on('taskFilter', 'change', render);
     on('newTaskBtn', 'click', openComposer);
     on('taskForm', 'submit', e => { e.preventDefault(); publish(); });
+    $('taskFiles').addEventListener('change', e => {
+        $('taskFileList').textContent = [...e.target.files].map(f => `${f.name} (${humanSize(f.size)})`).join(' · ');
+    });
     $('taskGroupChips').addEventListener('click', e => {
         const chip = e.target.closest('[data-group]');
         if (!chip) return;
@@ -293,6 +397,15 @@ export async function init() {
         else if (b.dataset.act === 'done') setStatus(id, 'done');
         else if (b.dataset.act === 'reopen') setStatus(id, 'todo');
         else if (b.dataset.act === 'delete') removeTask(id);
+        else if (b.dataset.act === 'file-open') openFile(id, b.dataset.fid);
+        else if (b.dataset.act === 'file-del') removeFile(id, b.dataset.fid);
+    });
+    $('taskList').addEventListener('change', e => {
+        const input = e.target.closest('input[data-upload]');
+        if (!input || !input.files.length) return;
+        const files = [...input.files];
+        input.value = '';
+        uploadAll(input.dataset.upload, files, input.dataset.role);
     });
 
     // Jump here from the bell list
