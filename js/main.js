@@ -1,5 +1,5 @@
 import {
-    state, bus, db, ref, get, $, on, avatar, isAdmin, api, closeModal, showSection,
+    state, bus, db, ref, get, onValue, $, on, avatar, isAdmin, api, closeModal, showSection,
     updateNotifications, applyRoles, enableFeature, auditLog
 } from './core.js';
 import { initAuth, initAuthUI } from './auth.js';
@@ -70,6 +70,27 @@ async function upgradeRole() {
     } catch (err) { console.warn('Could not read the raw role', err); }
 }
 
+// ---------- Profile photos ----------
+// Loaded before anything is drawn, so lists show photos from the first paint; later changes arrive live.
+const toPhotoMap = raw => Object.fromEntries(
+    Object.entries(raw || {}).map(([key, v]) => [key, v && v.image]).filter(([, image]) => image)
+);
+
+async function loadPhotos() {
+    try { state.photos = toPhotoMap((await get(ref(db, 'publicAvatars'))).val()); }
+    catch (err) { console.warn('Could not load profile photos', err); }
+
+    let first = true;
+    onValue(ref(db, 'publicAvatars'), snap => {
+        state.photos = toPhotoMap(snap.val());
+        if (first) { first = false; return; }               // the initial callback repeats what we just loaded
+        const header = $('headerAvatar');
+        if (header) header.src = avatar(state.currentUser.name);
+        bus.emit('photos:changed');
+        bus.emit('data:changed');                           // redraw lists with the new photos
+    }, err => console.warn('publicAvatars', err));
+}
+
 // ---------- Data ----------
 async function initializeData() {
     const load = async name => {
@@ -122,6 +143,7 @@ function setupShell() {
 async function startApp() {
     localStorage.removeItem('duna_user');           // leftovers from the old login
     await upgradeRole();
+    await loadPhotos();                             // before any avatar is drawn
     const u = state.currentUser;
     $('currentUserEmail').textContent = u.name;
     $('headerAvatar').src = avatar(u.name);
