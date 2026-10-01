@@ -27,7 +27,7 @@ export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRk
 export const AUTH_EMAIL_DOMAIN = 'dunanetworks.com';      // must match login.html
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const WORK_TZ = 'Europe/Budapest';
-export const CURRENCY = 'USD';
+export const CURRENCY = 'HUF';
 export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 export const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
 export const PAYROLL_RULES = { allowanceRate: 0.10, deductionRate: 0.08 };
@@ -122,7 +122,21 @@ export const fmtDateTime = ts => ts
     ? new Date(ts).toLocaleString('en-GB', { timeZone: WORK_TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     : '...';
 
-// ---------- Firebase API wrapper ----------
+// ---------- Audit trail (fails quietly if the rules do not allow it) ----------
+export function auditLog(action, details = '') {
+    const u = state.currentUser;
+    return push(ref(db, 'audit_logs'), {
+        ts: serverTimestamp(), user: u.name, eid: u.employeeId || '',
+        action, details: String(details).slice(0, 300)
+    }).catch(() => {});
+}
+
+// ---------- Firebase API wrapper (every create / update / delete is audited) ----------
+const AUDIT_SKIP = new Set(['profile_extensions', 'users', 'directory']);
+const brief = b => !b ? '' : [
+    b.firstName && `${b.firstName} ${b.lastName || ''}`.trim(), b.name, b.title, b.employeeId, b.status
+].filter(Boolean).join(' · ').slice(0, 120);
+
 export async function api(endpoint, method = 'GET', body = null) {
     const [path] = endpoint.split('?');
     const parts = path.split('/').filter(Boolean);
@@ -130,6 +144,7 @@ export async function api(endpoint, method = 'GET', body = null) {
     const id = parts[1];
     const dbRef = ref(db);
     const clean = body ? JSON.parse(JSON.stringify(body)) : null;   // strips undefined; null removes a key on update
+    const audit = (verb, detail) => { if (!AUDIT_SKIP.has(collection)) auditLog(`${verb} ${collection}`, detail); };
 
     if (method === 'GET') {
         if (id) {
@@ -145,26 +160,20 @@ export async function api(endpoint, method = 'GET', body = null) {
     if (method === 'POST') {
         const newRef = push(child(dbRef, collection));
         await set(newRef, clean);
+        audit('Created', brief(clean));
         return { ...clean, id: newRef.key };
     }
     if (method === 'PUT') {
         await update(child(dbRef, `${collection}/${id}`), clean);
         const snap = await get(child(dbRef, `${collection}/${id}`));
+        audit('Updated', `${id} ${brief(clean)}`.trim());
         return { ...snap.val(), id };
     }
     if (method === 'DELETE') {
         await remove(child(dbRef, `${collection}/${id}`));
+        audit('Deleted', id);
         return { success: true };
     }
-}
-
-// ---------- Audit trail (fails quietly if the rules do not allow it yet) ----------
-export function auditLog(action, details = '') {
-    const u = state.currentUser;
-    return push(ref(db, 'audit_logs'), {
-        ts: serverTimestamp(), user: u.name, eid: u.employeeId || '',
-        action, details: String(details).slice(0, 300)
-    }).catch(() => {});
 }
 
 // ---------- UI helpers ----------
