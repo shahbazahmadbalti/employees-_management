@@ -418,6 +418,8 @@
         let rosterData = null;
         let rosterStatus = 'idle';
         let dayOffset = 0;
+        let photos = {};     // profile photos: { <encoded name>: dataUrl }, from the public publicAvatars node
+        const photoKey = name => encodeURIComponent(String(name || '').trim()).replace(/\./g, '%2E');
 
         const dateForOffset = o => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + o); return d; };
         function normTime(v) {
@@ -459,7 +461,7 @@
                     name, label: String(entry.area),
                     segment: [].concat(locations[name] || [])[0] || t('general'),
                     start, end, status: shiftStatus(offset, start, end),
-                    img: images[name] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff&bold=true`
+                    img: images[name] || photos[photoKey(name)] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff&bold=true`
                 });
             });
             return out.sort((a, b) => (a.start || '99:99').localeCompare(b.start || '99:99') || a.label.localeCompare(b.label));
@@ -513,6 +515,11 @@
                 const res = await fetch(CONFIG.SCRIPT_URL);
                 if (!res.ok) throw new Error('HTTP ' + res.status);
                 rosterData = await res.json();
+                try {   // profile photos (public node); the roster still works without them
+                    const snap = await get(ref(db, 'publicAvatars'));
+                    photos = Object.fromEntries(Object.entries(snap.val() || {})
+                        .map(([k, v]) => [k, v && v.image]).filter(([, image]) => image));
+                } catch (e) { console.warn('Photos not available', e); }
                 rosterStatus = 'ready';
             } catch (err) {
                 console.error('Roster load failed:', err);
@@ -542,9 +549,11 @@
         // ====================== Login (Firebase Authentication) ======================
         let submitting = false;
 
+        // Message left by the dashboard when it rejected a session (inactive / not set up)
         const notice = sessionStorage.getItem('duna_login_notice');
         if (notice) { sessionStorage.removeItem('duna_login_notice'); showError({ key: notice }); }
 
+        // Already signed in? Go straight to the app.
         onAuthStateChanged(auth, user => {
             if (user && !submitting) window.location.replace('index.html');
         });
