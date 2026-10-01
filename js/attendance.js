@@ -10,6 +10,9 @@ const SK_STEPS = [['checkIn', 'Check in'], ['b1Out', 'Break 1 start'], ['b1In', 
 const SDI_STEPS = [['lineIn', 'Line in'], ['b1Start', 'Break 1 start'], ['b1End', 'Break 1 end'], ['b2Start', 'Break 2 start'], ['b2End', 'Break 2 end'], ['b3Start', 'Break 3 start'], ['b3End', 'Break 3 end'], ['lineOut', 'Line out']];
 const FIRST = { SK: 'checkIn', SDI: 'lineIn' };
 const FINAL = { SK: 'checkOut', SDI: 'lineOut' };
+const REPORT = { SK: 'remarks', SDI: 'comments' };           // the shift report lives here
+const MIN_REPORT = 5;
+const MAX_FUTURE_DAYS = 60;
 const BREAKS = { SK: [['b1Out', 'b1In'], ['b2Out', 'b2In']], SDI: [['b1Start', 'b1End'], ['b2Start', 'b2End'], ['b3Start', 'b3End']] };
 const SDI_CHECKS = [['smock', 'Smock'], ['gloves', 'Gloves'], ['noAccessories', 'No accessories']];
 const SDI_TASKS = [['taskError', 'Errors'], ['taskClean', 'Cleaning'], ['taskTicket', 'Tickets'], ['taskAGVIn', 'AGV in'], ['taskAGVOut', 'AGV out']];
@@ -57,15 +60,30 @@ async function writeLog(ctx, fields) {
     });
 }
 
-// Employees can only stamp the server time: one press, no typing, confirmed once
-async function stamp(ctx, field, btn) {
+// Employees can only stamp the server time. Checking out also needs a shift report.
+async function stamp(ctx, field, btn, container) {
     const label = stepsOf(ctx.fmt).find(([k]) => k === field)?.[1] || field;
     const snap = await get(ref(db, `attendanceLogs/${ctx.date}/${ctx.eid}/${field}`));
     if (snap.exists()) return showToast(`${label} is already recorded`, 'info');
+
+    const extra = {};
+    if (field === FINAL[ctx.fmt]) {
+        const key = REPORT[ctx.fmt];
+        const el = container.querySelector(`[data-detail="${key}"]`);
+        const report = (el?.value || '').trim() || String(my.log?.[key] || '').trim();
+        if (report.length < MIN_REPORT) {
+            showToast('Please write your shift report before checking out', 'error');
+            if (el) { el.classList.add('needs-report'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.focus(); }
+            return;
+        }
+        extra[key] = report;
+    }
+
     const t = timeNow();
-    if (!confirm(`Record "${label}" at ${t}?\nThis cannot be edited afterwards.`)) return;
+    const note = field === FINAL[ctx.fmt] ? '\nYour report will be saved with it.' : '';
+    if (!confirm(`Record "${label}" at ${t}?${note}\nThis cannot be edited afterwards.`)) return;
     btn.disabled = true;
-    await writeLog(ctx, { [field]: t });
+    await writeLog(ctx, { [field]: t, ...extra });
     showToast(`${label} recorded at ${t}`, 'success');
 }
 
@@ -85,7 +103,7 @@ function bindEditor(container, getCtx) {
         const ctx = getCtx();
         if (!ctx) return;
         try {
-            if (b.dataset.act === 'step') await stamp(ctx, b.dataset.field, b);
+            if (b.dataset.act === 'step') await stamp(ctx, b.dataset.field, b, container);
             else if (b.dataset.act === 'clear' && isManager()) await writeLog(ctx, { [b.dataset.field]: null });
             else if (b.dataset.act === 'save-details') await saveDetails(container, ctx);
         } catch (err) { showToast('Could not save: ' + err.message, 'error'); }
@@ -99,6 +117,7 @@ function bindEditor(container, getCtx) {
         try { await writeLog(ctx, { [i.dataset.time]: i.value || null }); }
         catch (err) { showToast('Could not save: ' + err.message, 'error'); }
     });
+    container.addEventListener('input', e => { if (e.target.matches('[data-detail]')) e.target.classList.remove('needs-report'); });
 }
 
 // Don't wipe what someone is typing when a live update arrives
@@ -118,15 +137,17 @@ function detailsHTML(log, fmt, canText) {
             <div class="md-checks">${SDI_CHECKS.map(([k, l]) => `<label><input type="checkbox" data-detail="${k}" ${log[k] ? 'checked' : ''} ${dis}> ${l}</label>`).join('')}</div>
             <h4>Tasks</h4>
             <div class="md-tasks">${SDI_TASKS.map(([k, l]) => `<div class="form-group"><label>${l}</label><input type="text" class="form-control" data-detail="${k}" value="${esc(log[k])}" ${dis}></div>`).join('')}</div>
-            <div class="form-group"><label>Comments</label><textarea class="form-control" rows="2" data-detail="comments" ${dis}>${esc(log.comments)}</textarea></div>
+            <div class="form-group"><label>Shift report / comments * <small style="color:var(--gray-500)">(required before line out)</small></label>
+                <textarea class="form-control" rows="3" data-detail="comments" placeholder="What happened during your shift?" ${dis}>${esc(log.comments)}</textarea></div>
             ${save}</div>`;
     }
     return `<div class="md-section">
-        <div class="form-group"><label>Remarks</label><textarea class="form-control" rows="2" data-detail="remarks" ${dis}>${esc(log.remarks)}</textarea></div>
+        <div class="form-group"><label>Shift report * <small style="color:var(--gray-500)">(required before check out)</small></label>
+            <textarea class="form-control" rows="3" data-detail="remarks" placeholder="What happened during your shift?" ${dis}>${esc(log.remarks)}</textarea></div>
         ${save}</div>`;
 }
 
-// o: { mode: 'employee' | 'admin', stampable, canText }   ('admin' mode = manager corrections)
+// o: { mode: 'employee' | 'admin', stampable, canText, future }   ('admin' mode = manager corrections)
 function editorHTML(log, fmt, o) {
     log = log || {};
     const steps = stepsOf(fmt), first = FIRST[fmt], final = FINAL[fmt];
@@ -142,6 +163,8 @@ function editorHTML(log, fmt, o) {
                 html += `<button class="btn btn-outline" data-act="step" data-field="${final}">${steps[steps.length - 1][1]} now</button>`;
             }
             html += '</div>';
+        } else if (o.future) {
+            html += '<p class="md-hint">This day has not started yet. You can check in on the day.</p>';
         } else {
             html += '<p class="md-hint">Times can only be recorded for today, or for an open shift from yesterday.</p>';
         }
@@ -202,7 +225,7 @@ function mountNotes(container, date, eid, who) {
 }
 
 // ==================== My Day (employee) ====================
-const my = { date: todayStr(), log: null, unsub: null, notesUnsub: null };
+const my = { date: todayStr(), log: null, unsub: null, notesUnsub: null, pending: null };
 
 const myCtx = () => {
     const u = state.currentUser;
@@ -221,14 +244,15 @@ function renderMyDay() {
     const today = todayStr(), yesterday = addDays(today, -1);
     const fmt = formatOf(my.log?.format || u.logType);
     const shift = shiftFor(u.name, my.date);
+    const future = my.date > today;
     const stampable = my.date === today || (my.date === yesterday && isOpenShift(my.log));
     const canText = my.date === today || my.date === yesterday;
 
     $('myDayDate').textContent = (my.date === today ? 'Today · ' : '') + longDate(my.date);
     $('myDayShift').innerHTML = shift ? `<span class="att-chip">${esc(shift)}</span>` : '<span class="md-hint">No scheduled shift</span>';
     $('myDayFmt').textContent = fmt === 'SDI' ? 'SDI log' : 'Standard log';
-    $('myDayNext').disabled = my.date >= today;
-    safeRender(body, editorHTML(my.log, fmt, { mode: 'employee', stampable, canText }));
+    $('myDayNext').disabled = my.date >= addDays(today, MAX_FUTURE_DAYS);
+    safeRender(body, editorHTML(my.log, fmt, { mode: 'employee', stampable, canText, future }));
 }
 
 function renderMyAlerts() {
@@ -249,6 +273,7 @@ function subscribeMyLog() {
 async function openMyDay() {
     const u = state.currentUser;
     if (!u.employeeId || !u.employeeKey) { renderMyDay(); return; }
+    if (my.pending) { my.date = my.pending; my.pending = null; subscribeMyLog(); return; }   // jumped here from the bell
     const today = todayStr(), y = addDays(today, -1);
     try {
         const [t, yy] = await Promise.all([get(logRef(today, u.employeeId)), get(logRef(y, u.employeeId))]);
@@ -259,7 +284,7 @@ async function openMyDay() {
 
 function moveMy(n) {
     const next = addDays(my.date, n);
-    if (next > todayStr()) return;
+    if (next > addDays(todayStr(), MAX_FUTURE_DAYS)) return;
     my.date = next;
     subscribeMyLog();
 }
@@ -274,6 +299,7 @@ function watchAlerts() {
             state.replyAlertMap = snap.val() || {};
             state.alerts.replies = countLeaves(state.replyAlertMap);
             updateNotifications();
+            bus.emit('alerts:changed');
             renderAdminDay();
         }, err => console.warn('replyAlerts', err));
         return;
@@ -286,6 +312,7 @@ function watchAlerts() {
             const mine = new Set(state.employees.map(e => e.employeeId));
             state.alerts.replies = Object.values(state.replyAlertMap).reduce((s, m) => s + Object.keys(m || {}).filter(e => mine.has(e)).length, 0);
             updateNotifications();
+            bus.emit('alerts:changed');
             renderAdminDay();
         }, err => console.warn('replyAlerts', err)));
     }
@@ -293,8 +320,10 @@ function watchAlerts() {
         onValue(ref(db, `noteAlerts/${u.employeeId}`), snap => {
             const map = snap.val() || {};
             state.noteAlertDates = Object.keys(map).sort();
+            state.noteAlertTimes = map;
             state.alerts.notes = state.noteAlertDates.length;
             updateNotifications();
+            bus.emit('alerts:changed');
             renderMyAlerts();
             // already looking at that day: nothing new to announce
             if (map[my.date] && $('myday').classList.contains('active')) remove(ref(db, `noteAlerts/${u.employeeId}/${my.date}`)).catch(() => {});
@@ -303,7 +332,7 @@ function watchAlerts() {
 }
 
 // ==================== Manager: day view + log window ====================
-const adm = { date: todayStr(), logs: {}, unsub: null, group: 'ALL' };
+const adm = { date: todayStr(), logs: {}, unsub: null, group: 'ALL', pending: null };
 let modalCtx = null, modalUnsub = null, modalNotesUnsub = null;
 
 const isWorking = s => { const u = (s || '').toUpperCase().trim(); return !!u && u !== 'OFF' && !/AWAY|SICK|HOLIDAY|LEAVE/.test(u); };
@@ -333,7 +362,18 @@ function subscribeAdminDay() {
     adm.unsub = () => unsubs.forEach(u => u());
 }
 
-function openAdminAttendance() { fillPick(); subscribeAdminDay(); }
+function openAdminAttendance() {
+    fillPick();
+    if (adm.pending) {                                   // jumped here from the bell
+        const { date, eid } = adm.pending;
+        adm.pending = null;
+        adm.date = date;
+        subscribeAdminDay();
+        openLogModal(date, eid);
+        return;
+    }
+    subscribeAdminDay();
+}
 
 function moveAdm(n) { adm.date = addDays(adm.date, n); subscribeAdminDay(); }
 
@@ -444,6 +484,10 @@ export function initAttendance() {
 
     setInterval(() => { const c = $('myDayClock'); if (c) c.textContent = clockFmt.format(nowMs()); }, 1000);
     watchAlerts();
+
+    // Jumps requested by the notification list (they arrive just before the page switches)
+    bus.on('myday:open', date => { my.pending = date; });
+    bus.on('attendance:open', ({ date, eid }) => { adm.pending = { date, eid }; });
 
     bus.on('section', id => { if (id === 'myday') openMyDay(); else if (id === 'attendance') openAdminAttendance(); });
     bus.on('schedule:loaded', () => { renderMyDay(); renderAdminDay(); });
