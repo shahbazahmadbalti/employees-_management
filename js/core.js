@@ -27,7 +27,7 @@ export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyfxRk
 export const AUTH_EMAIL_DOMAIN = 'dunanetworks.com';      // must match login.html
 export const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 export const WORK_TZ = 'Europe/Budapest';
-export const CURRENCY = 'HUF';
+export const CURRENCY = 'USD';
 export const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 export const LEAVE_ALLOWANCE = { sick: 12, casual: 12, annual: 30 };
 export const PAYROLL_RULES = { allowanceRate: 0.10, deductionRate: 0.08 };
@@ -40,9 +40,10 @@ export const PAGE_TITLES = {
 
 // ---------- Shared state ----------
 // role: 'admin' | 'leader' | 'employee'   (main.js upgrades to 'leader' after reading users/<uid>)
+// photos: { <photoKey(name)>: dataUrl }   filled by main.js from publicAvatars
 export const state = {
     employees: [], departments: [], performance: [], payroll: [], leave: [], profiles: [],
-    schedule: {}, masterEmployees: [], employeeLocations: {},
+    schedule: {}, masterEmployees: [], employeeLocations: {}, photos: {},
     alerts: { notes: 0, replies: 0, notices: 0 }, noteAlertDates: [], replyAlertMap: {},
     currentUser: { uid: null, name: 'User', role: 'employee', rawRole: 'USER', employeeId: null, employeeKey: null, logType: 'Logs', leaderGroups: [] }
 };
@@ -61,12 +62,17 @@ bus.on('alerts:changed', () => updateNotifications());
 export const $ = id => document.getElementById(id);
 export const on = (id, evt, fn) => { const el = $(id); if (el) el.addEventListener(evt, fn); };
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export const avatar = (name, bg = '4F46E5') => `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=${bg}&color=fff`;
+export const profileKey = name => encodeURIComponent(name).replace(/\./g, '%2E');
+export const photoKey = name => profileKey(String(name || '').trim());
+
+// A person's photo when they have one, otherwise a letter avatar
+export const avatar = (name, bg = '4F46E5') =>
+    state.photos[photoKey(name)] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'User')}&background=${bg}&color=fff`;
+
 export const isAdmin = () => state.currentUser.role === 'admin';
 export const isLeader = () => state.currentUser.role === 'leader';
 export const isManager = () => isAdmin() || isLeader();
 export const fullNameOf = e => `${e.firstName || ''} ${e.lastName || ''}`.trim();
-export const profileKey = name => encodeURIComponent(name).replace(/\./g, '%2E');
 export const sameName = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 export const findEmployee = id => state.employees.find(e => String(e.id) === String(id));
 export const emailFor = id => `${String(id).trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
