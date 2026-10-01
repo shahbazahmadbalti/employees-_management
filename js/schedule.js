@@ -5,6 +5,7 @@ import {
 } from './core.js';
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
+const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
 const S = {
     raw: {},
@@ -16,6 +17,14 @@ const S = {
     syncing: false,
     syncStarted: false,
     warnedUnmatched: false
+};
+
+const R = { meta: false, data: false };
+const memberUnsubs = {};
+
+const num = value => {
+    const n = parseFloat(String(value ?? '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
 };
 
 // ==================== Public helpers ====================
@@ -53,13 +62,42 @@ export function groupFor(name) {
         .trim() || 'General';
 }
 
+// ==================== Group membership ====================
+
+function myGroups() {
+    const raw =
+        state.directory?.[state.currentUser.employeeId]?.group ||
+        groupFor(state.currentUser.name);
+
+    return new Set(
+        String(raw)
+            .split(',')
+            .map(group => group.trim().toLowerCase())
+            .filter(Boolean)
+    );
+}
+
+function groupMemberIds() {
+    const mine = myGroups();
+    const ids = new Set([state.currentUser.employeeId]);
+
+    Object.entries(state.directory || {}).forEach(([id, person]) => {
+        const groups = String(person.group || 'General')
+            .split(',')
+            .map(group => group.trim().toLowerCase());
+
+        if (groups.some(group => mine.has(group))) ids.add(id);
+    });
+
+    return [...ids].filter(Boolean);
+}
+
 // ==================== Shift and group styles ====================
 
 function shiftStyle(value) {
     const label = String(value || '').trim();
     const shift = label.toUpperCase();
 
-    /* Personal holiday / annual leave: green */
     if (
         shift.includes('P.HOLIDAY') ||
         shift.includes('PERSONAL HOLIDAY') ||
@@ -68,157 +106,66 @@ function shiftStyle(value) {
         shift.includes('AWAY') ||
         shift.includes('LEAVE')
     ) {
-        return {
-            bg: '#dcfce7',
-            fg: '#166534',
-            border: '#86efac',
-            type: 'holiday'
-        };
+        return { bg: '#dcfce7', fg: '#166534', border: '#86efac', type: 'holiday' };
     }
 
-    /* Sick leave: red */
     if (shift.includes('SICK')) {
-        return {
-            bg: '#fee2e2',
-            fg: '#991b1b',
-            border: '#fca5a5',
-            type: 'sick'
-        };
+        return { bg: '#fee2e2', fg: '#991b1b', border: '#fca5a5', type: 'sick' };
     }
 
-    /* Non-working day */
     if (shift === 'OFF' || shift === 'REST' || shift === 'R') {
-        return {
-            bg: '#f1f5f9',
-            fg: '#64748b',
-            border: '#cbd5e1',
-            type: 'off'
-        };
+        return { bg: '#f1f5f9', fg: '#64748b', border: '#cbd5e1', type: 'off' };
     }
 
-    /* Night shift: dark */
     if (
         shift === 'N' ||
         shift.includes('(N)') ||
         shift.includes('NIGHT') ||
         /\bN\b/.test(shift)
     ) {
-        return {
-            bg: '#312e81',
-            fg: '#eef2ff',
-            border: '#4338ca',
-            type: 'night'
-        };
+        return { bg: '#312e81', fg: '#eef2ff', border: '#4338ca', type: 'night' };
     }
 
-    /* Day shift: light */
     if (
         shift === 'D' ||
         shift.includes('(D)') ||
         shift.includes('DAY') ||
         /\bD\b/.test(shift)
     ) {
-        return {
-            bg: '#fef3c7',
-            fg: '#92400e',
-            border: '#fde68a',
-            type: 'day'
-        };
+        return { bg: '#fef3c7', fg: '#92400e', border: '#fde68a', type: 'day' };
     }
 
-    /* Working-area / operational shift colours */
     if (shift.includes('FA')) {
-        return {
-            bg: '#dbeafe',
-            fg: '#1e40af',
-            border: '#93c5fd',
-            type: 'fa'
-        };
+        return { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd', type: 'fa' };
     }
 
     if (shift.includes('P2') || shift.includes('P1')) {
-        return {
-            bg: '#d1fae5',
-            fg: '#065f46',
-            border: '#6ee7b7',
-            type: 'p2'
-        };
+        return { bg: '#d1fae5', fg: '#065f46', border: '#6ee7b7', type: 'p2' };
     }
 
     if (shift.includes('AD') || shift.includes('SUP')) {
-        return {
-            bg: '#ffedd5',
-            fg: '#9a3412',
-            border: '#fdba74',
-            type: 'support'
-        };
+        return { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74', type: 'support' };
     }
 
-    return {
-        bg: '#e0e7ff',
-        fg: '#3730a3',
-        border: '#a5b4fc',
-        type: 'other'
-    };
+    return { bg: '#e0e7ff', fg: '#3730a3', border: '#a5b4fc', type: 'other' };
 }
 
 function groupColour(groupName) {
     const group = String(groupName || 'General').trim().toUpperCase();
 
     const known = {
-        SK: {
-            bg: '#dbeafe',
-            fg: '#1e3a8a',
-            border: '#60a5fa',
-            accent: '#2563eb'
-        },
-        SDI: {
-            bg: '#ede9fe',
-            fg: '#5b21b6',
-            border: '#a78bfa',
-            accent: '#7c3aed'
-        },
-        FA: {
-            bg: '#ffedd5',
-            fg: '#9a3412',
-            border: '#fb923c',
-            accent: '#ea580c'
-        },
-        AD: {
-            bg: '#ccfbf1',
-            fg: '#115e59',
-            border: '#2dd4bf',
-            accent: '#0d9488'
-        },
-        P2: {
-            bg: '#dcfce7',
-            fg: '#166534',
-            border: '#4ade80',
-            accent: '#16a34a'
-        },
-        P1: {
-            bg: '#ecfccb',
-            fg: '#3f6212',
-            border: '#a3e635',
-            accent: '#65a30d'
-        },
-        MCS: {
-            bg: '#fce7f3',
-            fg: '#9d174d',
-            border: '#f472b6',
-            accent: '#db2777'
-        },
-        GENERAL: {
-            bg: '#f1f5f9',
-            fg: '#334155',
-            border: '#94a3b8',
-            accent: '#64748b'
-        }
+        SK: { bg: '#dbeafe', fg: '#1e3a8a', border: '#60a5fa', accent: '#2563eb' },
+        SDI: { bg: '#ede9fe', fg: '#5b21b6', border: '#a78bfa', accent: '#7c3aed' },
+        FA: { bg: '#ffedd5', fg: '#9a3412', border: '#fb923c', accent: '#ea580c' },
+        AD: { bg: '#ccfbf1', fg: '#115e59', border: '#2dd4bf', accent: '#0d9488' },
+        P2: { bg: '#dcfce7', fg: '#166534', border: '#4ade80', accent: '#16a34a' },
+        P1: { bg: '#ecfccb', fg: '#3f6212', border: '#a3e635', accent: '#65a30d' },
+        MCS: { bg: '#fce7f3', fg: '#9d174d', border: '#f472b6', accent: '#db2777' },
+        GENERAL: { bg: '#f1f5f9', fg: '#334155', border: '#94a3b8', accent: '#64748b' }
     };
 
     if (known[group]) return known[group];
 
-    /* Stable generated colour for every future group */
     let hash = 0;
 
     for (let i = 0; i < group.length; i++) {
@@ -356,9 +303,11 @@ function applySchedule() {
         schedule[name] = data;
         names.push(name);
 
-        if (S.locations[employeeId]) {
-            locations[name] = S.locations[employeeId];
-        }
+        const location =
+            S.locations[employeeId] ||
+            state.directory?.[employeeId]?.group;
+
+        if (location) locations[name] = location;
     });
 
     state.schedule = schedule;
@@ -396,67 +345,91 @@ async function fallbackFromSheet() {
     }
 }
 
+function maybeApply() {
+    if (!R.meta || !R.data) return;
+
+    S.ready = true;
+
+    if (S.meta || Object.keys(S.raw).length) {
+        applySchedule();
+    } else {
+        fallbackFromSheet();
+    }
+}
+
+function watchGroupMembers() {
+    const me = state.currentUser.employeeId;
+    const wanted = new Set(groupMemberIds());
+
+    Object.keys(memberUnsubs).forEach(id => {
+        if (wanted.has(id)) return;
+
+        memberUnsubs[id]();
+        delete memberUnsubs[id];
+        delete S.raw[id];
+    });
+
+    wanted.forEach(id => {
+        if (memberUnsubs[id]) return;
+
+        memberUnsubs[id] = onValue(
+            ref(db, `scheduleData/schedule/${id}`),
+            snapshot => {
+                const value = snapshot.val();
+
+                if (value) S.raw[id] = value;
+                else delete S.raw[id];
+
+                if (id === me) R.data = true;
+
+                maybeApply();
+            },
+            error => {
+                console.warn('schedule read denied for', id, error);
+
+                if (id === me) R.data = true;
+
+                maybeApply();
+            }
+        );
+    });
+}
+
 function subscribe() {
     if (S.subscribed) return;
 
     S.subscribed = true;
 
-    const employeeId = state.currentUser.employeeId;
-    const manager = isManager();
-    const ready = { meta: false, data: false };
-
-    const maybeApply = () => {
-        if (!ready.meta || !ready.data) return;
-
-        S.ready = true;
-
-        if (S.meta || Object.keys(S.raw).length) {
-            applySchedule();
-        } else {
-            fallbackFromSheet();
-        }
-    };
-
     onValue(
         ref(db, 'scheduleData/meta'),
         snapshot => {
             S.meta = snapshot.val();
-            ready.meta = true;
+            R.meta = true;
             updateStatus();
             maybeApply();
         },
         error => {
             console.warn('schedule meta', error);
-            ready.meta = true;
+            R.meta = true;
             maybeApply();
         }
     );
 
-    onValue(
-        ref(
-            db,
-            manager
-                ? 'scheduleData/schedule'
-                : `scheduleData/schedule/${employeeId}`
-        ),
-        snapshot => {
-            const data = snapshot.val();
+    if (isManager()) {
+        onValue(
+            ref(db, 'scheduleData/schedule'),
+            snapshot => {
+                S.raw = snapshot.val() || {};
+                R.data = true;
+                maybeApply();
+            },
+            error => {
+                console.warn('schedule read', error);
+                R.data = true;
+                maybeApply();
+            }
+        );
 
-            S.raw = manager
-                ? (data || {})
-                : (data ? { [employeeId]: data } : {});
-
-            ready.data = true;
-            maybeApply();
-        },
-        error => {
-            console.warn('schedule read', error);
-            ready.data = true;
-            maybeApply();
-        }
-    );
-
-    if (manager) {
         onValue(
             ref(db, 'scheduleData/locations'),
             snapshot => {
@@ -466,6 +439,8 @@ function subscribe() {
             },
             error => console.warn('schedule locations', error)
         );
+    } else {
+        watchGroupMembers();
     }
 }
 
@@ -705,6 +680,8 @@ function populateScheduleFilters() {
         ...new Set(
             Object.values(state.employeeLocations || {})
                 .flat()
+                .flatMap(value => String(value).split(','))
+                .map(value => value.trim())
                 .filter(Boolean)
         )
     ].sort();
@@ -716,10 +693,6 @@ function populateScheduleFilters() {
     }
 
     names = [...new Set(names)].sort();
-
-    if (!isManager()) {
-        names = names.filter(name => sameName(name, state.currentUser.name));
-    }
 
     locationSelect.innerHTML =
         '<option value="All">All</option>' +
@@ -758,34 +731,31 @@ export function renderSchedule() {
         </th>`;
 
     for (let day = 1; day <= daysInMonth; day++) {
-        const jsDate = new Date(
+        const dow = new Date(
             Number(selectedYear),
             MONTHS.indexOf(selectedMonth),
             day
-        );
+        ).getDay();
 
-        const isWeekend = jsDate.getDay() === 0 || jsDate.getDay() === 6;
+        const weekend = dow === 0 || dow === 6;
 
         headers += `
-            <th class="${isWeekend ? 'schedule-weekend' : ''}"
-                style="text-align:center;min-width:48px;">
-                ${day}
+            <th class="${weekend ? 'schedule-weekend' : ''}"
+                style="text-align:center;min-width:52px;${weekend ? 'color:#dc2626;' : ''}">
+                <div>${day}</div>
+                <div style="font-size:10px;font-weight:600;opacity:.8;">${DAY_NAMES[dow]}</div>
             </th>`;
     }
 
     headers += `
         <th class="schedule-total-head"
             style="position:sticky;right:0;background:#f8fafc;z-index:4;text-align:center;width:84px;min-width:84px;">
-            HOURS
+            BASIC<br><small>OT</small>
         </th>`;
 
     headerRow.innerHTML = headers;
 
     let names = Object.keys(state.schedule || {});
-
-    if (!isManager()) {
-        names = names.filter(name => sameName(name, state.currentUser.name));
-    }
 
     if (selectedEmployee !== 'All') {
         names = names.filter(name => name === selectedEmployee);
@@ -793,11 +763,20 @@ export function renderSchedule() {
 
     if (selectedLocation !== 'All') {
         names = names.filter(name =>
-            [].concat(state.employeeLocations?.[name] || []).includes(selectedLocation)
+            [].concat(state.employeeLocations?.[name] || [])
+                .join(',')
+                .split(',')
+                .map(value => value.trim())
+                .includes(selectedLocation)
         );
     }
 
-    names.sort((a, b) => a.localeCompare(b));
+    names.sort((a, b) => {
+        const meA = sameName(a, state.currentUser.name) ? 0 : 1;
+        const meB = sameName(b, state.currentUser.name) ? 0 : 1;
+
+        return meA - meB || a.localeCompare(b);
+    });
 
     if (!names.length) {
         tbody.innerHTML = `
@@ -810,7 +789,8 @@ export function renderSchedule() {
     }
 
     tbody.innerHTML = names.map(name => {
-        let totalHours = 0;
+        let totalBasic = 0;
+        let totalOT = 0;
         let cells = '';
 
         const group = employeeGroup(name);
@@ -822,29 +802,30 @@ export function renderSchedule() {
         for (let day = 1; day <= daysInMonth; day++) {
             const dayData = employeeSchedule[day];
             const label = dayData?.area ? String(dayData.area).trim() : '';
+            const basic = num(dayData?.basic ?? dayData?.hours);
+            const ot = num(dayData?.ot);
 
-            if (label) {
-                const colour = shiftStyle(label);
-                const hours = Number(dayData.hours);
+            if (!label && !basic && !ot) {
+                cells += '<td class="schedule-day-cell schedule-empty-cell"></td>';
+                continue;
+            }
 
-                if (!Number.isNaN(hours) && hours > 0) {
-                    totalHours += hours;
-                } else if (!['holiday', 'sick', 'off'].includes(colour.type)) {
-                    totalHours += 8;
-                }
+            totalBasic += basic;
+            totalOT += ot;
 
-                cells += `
-                    <td class="schedule-day-cell">
-                        <div
-                            class="shift-pill shift-${colour.type}"
+            const colour = shiftStyle(label);
+
+            cells += `
+                <td class="schedule-day-cell" style="text-align:center;">
+                    ${label ? `
+                        <div class="shift-pill shift-${colour.type}"
                             title="${esc(label)}"
                             style="background:${colour.bg};color:${colour.fg};border-color:${colour.border};">
                             ${esc(label)}
-                        </div>
-                    </td>`;
-            } else {
-                cells += '<td class="schedule-day-cell schedule-empty-cell"></td>';
-            }
+                        </div>` : ''}
+                    ${basic ? `<div style="font-size:11px;font-weight:700;margin-top:2px;">${basic}</div>` : ''}
+                    ${ot ? `<div style="font-size:10px;font-weight:700;color:#b45309;">OT ${ot}</div>` : ''}
+                </td>`;
         }
 
         return `
@@ -881,7 +862,8 @@ export function renderSchedule() {
                         font-weight:800;
                         width:84px;
                         min-width:84px;">
-                    ${totalHours || '-'}
+                    ${totalBasic || '-'}
+                    <div style="font-size:11px;color:#b45309;">OT ${totalOT}</div>
                 </td>
             </tr>`;
     }).join('');
@@ -916,6 +898,7 @@ export function initSchedule() {
         .forEach(id => on(id, 'change', renderSchedule));
 
     bus.on('data:changed', () => {
+        if (!isManager() && S.subscribed) watchGroupMembers();
         if (S.ready) applySchedule();
     });
 }
