@@ -42,6 +42,9 @@ export function statusOf(log) {
 }
 const isOpenShift = log => !!log && statusOf(log) !== 'pending' && statusOf(log) !== 'done';
 
+// A shift label from the Google Sheet counts as "scheduled to work" unless it is empty, OFF or an absence
+const isWorking = s => { const u = (s || '').toUpperCase().trim(); return !!u && u !== 'OFF' && !/AWAY|SICK|HOLIDAY|LEAVE/.test(u); };
+
 const logRef = (date, eid) => ref(db, `attendanceLogs/${date}/${eid}`);
 export async function logsInRange(from, to) {
     const snap = await get(query(ref(db, 'attendanceLogs'), orderByKey(), startAt(from), endAt(to)));
@@ -52,6 +55,20 @@ const longDate = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { w
 const fmtTs = ts => ts ? new Date(ts).toLocaleString('en-GB', { timeZone: WORK_TZ, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }) : 'sending...';
 const iconFor = (key, f) => key === FIRST[f] ? 'fa-right-to-bracket' : key === FINAL[f] ? 'fa-right-from-bracket' : /(Out|Start)$/.test(key) ? 'fa-mug-hot' : 'fa-play';
 
+// ==================== Who may check in ====================
+let scheduleReady = false;          // true once the Google Sheet schedule has been loaded
+
+// Returns the reason check-in is not allowed on this date, or '' when it is allowed
+function checkInBlock(date) {
+    const u = state.currentUser;
+    if (!scheduleReady) return 'Your schedule has not loaded yet. Refresh the page, or press "Refresh Schedule" on the Schedule page.';
+    const shift = shiftFor(u.name, date);
+    if (!isWorking(shift)) return shift ? `Your schedule shows "${shift}" for this day.` : 'You are not scheduled to work today. If this is a mistake, contact your manager.';
+    const leave = state.leave.find(l => l.employeeId === u.employeeId && l.status === 'approved' && l.fromDate <= date && l.toDate >= date);
+    if (leave) return 'You are on approved leave today.';
+    return '';
+}
+
 // ==================== Writing ====================
 async function writeLog(ctx, fields) {
     await update(logRef(ctx.date, ctx.eid), {
@@ -60,11 +77,16 @@ async function writeLog(ctx, fields) {
     });
 }
 
-// Employees can only stamp the server time. Checking out also needs a shift report.
+// Employees can only stamp the server time. Checking in needs a schedule; checking out needs a shift report.
 async function stamp(ctx, field, btn, container) {
     const label = stepsOf(ctx.fmt).find(([k]) => k === field)?.[1] || field;
     const snap = await get(ref(db, `attendanceLogs/${ctx.date}/${ctx.eid}/${field}`));
     if (snap.exists()) return showToast(`${label} is already recorded`, 'info');
+
+    if (field === FIRST[ctx.fmt]) {
+        const reason = checkInBlock(ctx.date);
+        if (reason) return showToast(reason, 'error');
+    }
 
     const extra = {};
     if (field === FINAL[ctx.fmt]) {
@@ -147,7 +169,7 @@ function detailsHTML(log, fmt, canText) {
         ${save}</div>`;
 }
 
-// o: { mode: 'employee' | 'admin', stampable, canText, future }   ('admin' mode = manager corrections)
+// o: { mode: 'employee' | 'admin', stampable, canText, future, blockReason }   ('admin' mode = manager corrections)
 function editorHTML(log, fmt, o) {
     log = log || {};
     const steps = stepsOf(fmt), first = FIRST[fmt], final = FINAL[fmt];
@@ -158,11 +180,15 @@ function editorHTML(log, fmt, o) {
             html += '<div class="md-done"><i class="fas fa-circle-check"></i> Shift complete. Thank you!</div>';
         } else if (o.stampable) {
             const next = steps.find(([k]) => !log[k]);
-            html += `<div class="md-actions"><button class="btn btn-primary md-next" data-act="step" data-field="${next[0]}"><i class="fas ${iconFor(next[0], fmt)}"></i> ${next[1]}</button>`;
-            if (log[first] && next[0] !== final) {
-                html += `<button class="btn btn-outline" data-act="step" data-field="${final}">${steps[steps.length - 1][1]} now</button>`;
+            if (next[0] === first && o.blockReason) {
+                html += `<div class="md-blocked"><i class="fas fa-ban"></i><div><strong>Check-in is not available</strong><span>${esc(o.blockReason)}</span></div></div>`;
+            } else {
+                html += `<div class="md-actions"><button class="btn btn-primary md-next" data-act="step" data-field="${next[0]}"><i class="fas ${iconFor(next[0], fmt)}"></i> ${next[1]}</button>`;
+                if (log[first] && next[0] !== final) {
+                    html += `<button class="btn btn-outline" data-act="step" data-field="${final}">${steps[steps.length - 1][1]} now</button>`;
+                }
+                html += '</div>';
             }
-            html += '</div>';
         } else if (o.future) {
             html += '<p class="md-hint">This day has not started yet. You can check in on the day.</p>';
         } else {
@@ -247,12 +273,14 @@ function renderMyDay() {
     const future = my.date > today;
     const stampable = my.date === today || (my.date === yesterday && isOpenShift(my.log));
     const canText = my.date === today || my.date === yesterday;
+    const started = !!my.log?.[FIRST[fmt]];
+    const blockReason = stampable && !started ? checkInBlock(my.date) : '';   // an already started shift is never blocked
 
     $('myDayDate').textContent = (my.date === today ? 'Today · ' : '') + longDate(my.date);
     $('myDayShift').innerHTML = shift ? `<span class="att-chip">${esc(shift)}</span>` : '<span class="md-hint">No scheduled shift</span>';
     $('myDayFmt').textContent = fmt === 'SDI' ? 'SDI log' : 'Standard log';
     $('myDayNext').disabled = my.date >= addDays(today, MAX_FUTURE_DAYS);
-    safeRender(body, editorHTML(my.log, fmt, { mode: 'employee', stampable, canText, future }));
+    safeRender(body, editorHTML(my.log, fmt, { mode: 'employee', stampable, canText, future, blockReason }));
 }
 
 function renderMyAlerts() {
@@ -335,7 +363,6 @@ function watchAlerts() {
 const adm = { date: todayStr(), logs: {}, unsub: null, group: 'ALL', pending: null };
 let modalCtx = null, modalUnsub = null, modalNotesUnsub = null;
 
-const isWorking = s => { const u = (s || '').toUpperCase().trim(); return !!u && u !== 'OFF' && !/AWAY|SICK|HOLIDAY|LEAVE/.test(u); };
 const shiftPriority = s => {
     const u = (s || '').toUpperCase();
     if (/AWAY|SICK|HOLIDAY|LEAVE/.test(u)) return 5;
@@ -490,9 +517,10 @@ export function initAttendance() {
     bus.on('attendance:open', ({ date, eid }) => { adm.pending = { date, eid }; });
 
     bus.on('section', id => { if (id === 'myday') openMyDay(); else if (id === 'attendance') openAdminAttendance(); });
-    bus.on('schedule:loaded', () => { renderMyDay(); renderAdminDay(); });
+    bus.on('schedule:loaded', () => { scheduleReady = true; renderMyDay(); renderAdminDay(); });
     bus.on('data:changed', () => {
         fillPick();
+        renderMyDay();                         // approved leave may have changed
         if (isLeader() && $('attendance').classList.contains('active')) subscribeAdminDay(); else renderAdminDay();
     });
 }
