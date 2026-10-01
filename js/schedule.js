@@ -1,10 +1,12 @@
 import {
     db, ref, get, update, onValue, serverTimestamp, GOOGLE_SCRIPT_URL, MONTHS,
-    state, bus, $, on, esc, sameName, profileKey, isAdmin, isManager, todayStr, fullNameOf, fmtDateTime, showToast, auditLog
+    state, bus, $, on, esc, sameName, profileKey, isAdmin, isManager, todayStr, addDays, fullNameOf, fmtDateTime, showToast, auditLog
 } from './core.js';
 
 const COLORS = { FA: ['#bfdbfe', '#1e40af'], P2: ['#bbf7d0', '#166534'], AD: ['#fed7aa', '#9a3412'], DEFAULT: ['#c7d2fe', '#3730a3'] };
 const CHECK_EVERY_MS = 10 * 60 * 1000;      // how often an open admin session checks the sheet
+const START_KEYS = ['start', 'in', 'checkIn', 'from', 'begin'];
+const END_KEYS = ['end', 'out', 'checkOut', 'to', 'finish'];
 
 // Everything about the sync lives here
 const S = { raw: {}, locations: {}, meta: null, subscribed: false, ready: false, fallbackDone: false, syncing: false, syncStarted: false, warnedUnmatched: false };
@@ -45,6 +47,12 @@ async function sha256(text) {
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
     return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
+const pidCache = {};
+const pidOf = async eid => pidCache[eid] || (pidCache[eid] = (await sha256(String(eid))).slice(0, 16));
+
+const normTime = v => { const m = String(v ?? '').match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null; };
+const pickTime = (entry, keys) => { for (const k of keys) { const v = normTime(entry[k]); if (v) return v; } return null; };
+const isWorkingLabel = s => { const u = String(s || '').toUpperCase().trim(); return !!u && u !== 'OFF' && !/AWAY|SICK|HOLIDAY|LEAVE/.test(u); };
 
 const setStatus = text => { const el = $('scheduleStatus'); if (el) el.textContent = text; };
 function updateStatus() {
@@ -141,6 +149,33 @@ function mapSheet(sheet) {
     return { byEid, locations, unmatched };
 }
 
+// The public roster for the login page: yesterday, today and tomorrow, no names.
+// Rewritten only when its content (or the date window) changes.
+async function syncRoster(byEid, locations) {
+    const today = todayStr();
+    const dates = [addDays(today, -1), today, addDays(today, 1)];
+    const roster = {};
+    for (const date of dates) {
+        const [y, m, d] = date.split('-');
+        const day = {};
+        for (const [eid, data] of Object.entries(byEid)) {
+            const entry = data?.[y]?.[MONTHS[Number(m) - 1]]?.[Number(d)];
+            const area = entry && entry.area ? String(entry.area).trim() : '';
+            if (!isWorkingLabel(area)) continue;
+            const group = String(locations[eid] || '').split(',')[0].trim() || state.directory?.[eid]?.group || 'General';
+            day[await pidOf(eid)] = { a: area, g: group, s: pickTime(entry, START_KEYS), e: pickTime(entry, END_KEYS) };
+        }
+        if (Object.keys(day).length) roster[date] = day;
+    }
+    const hash = await sha256(stable({ dates, roster }));
+    if ((await get(ref(db, 'publicRosterMeta/hash'))).val() === hash) return false;
+    await update(ref(db), {
+        publicRoster: Object.keys(roster).length ? JSON.parse(JSON.stringify(roster)) : null,
+        publicRosterMeta: { hash, dates, updatedAt: serverTimestamp() }
+    });
+    return true;
+}
+
 export async function syncFromSheet({ silent = false } = {}) {
     if (!isAdmin() || S.syncing) return;
     S.syncing = true;
@@ -150,37 +185,39 @@ export async function syncFromSheet({ silent = false } = {}) {
         if (!Object.keys(byEid).length) throw new Error('The sheet returned no schedule rows that match your employees.');
         const hash = await sha256(stable({ byEid, locations }));
 
-        if (!silent && unmatched.length) showToast(`Not matched to an employee: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}`, 'info');
-        if (silent && unmatched.length && !S.warnedUnmatched) {
+        if (unmatched.length && (!silent || !S.warnedUnmatched)) {
             S.warnedUnmatched = true;
-            showToast(`Schedule names not matched to an employee: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}`, 'info');
+            showToast(`Not matched to an employee: ${unmatched.slice(0, 5).join(', ')}${unmatched.length > 5 ? '...' : ''}`, 'info');
         }
 
         const remoteHash = (await get(ref(db, 'scheduleData/meta/hash'))).val();
-        if (remoteHash === hash) {
-            if (!silent) showToast('Schedule is already up to date', 'success');
-            return;
+        const scheduleChanged = remoteHash !== hash;
+
+        if (scheduleChanged) {
+            // Write only the people whose rows changed, in one atomic update
+            const hashes = (await get(ref(db, 'scheduleData/hashes'))).val() || {};
+            const updates = {};
+            let changed = 0;
+            for (const [eid, data] of Object.entries(byEid)) {
+                const h = await sha256(stable(data));
+                if (hashes[eid] !== h) { updates[`schedule/${eid}`] = data; updates[`hashes/${eid}`] = h; changed++; }
+                updates[`locations/${eid}`] = locations[eid] || null;
+            }
+            Object.keys(hashes).forEach(eid => {
+                if (!byEid[eid]) { updates[`schedule/${eid}`] = null; updates[`hashes/${eid}`] = null; updates[`locations/${eid}`] = null; changed++; }
+            });
+            updates.meta = {
+                hash, updatedAt: serverTimestamp(), updatedBy: state.currentUser.name, source: 'browser',
+                employees: Object.keys(byEid).length, changed, unmatched
+            };
+            await update(ref(db, 'scheduleData'), updates);
+            showToast(`Schedule updated from Google Sheets (${changed} ${changed === 1 ? 'person' : 'people'} changed)`, 'success');
+            auditLog('Schedule synced', `${changed} changed, ${Object.keys(byEid).length} employees`);
         }
 
-        // Write only the people whose rows changed, in one atomic update
-        const hashes = (await get(ref(db, 'scheduleData/hashes'))).val() || {};
-        const updates = {};
-        let changed = 0;
-        for (const [eid, data] of Object.entries(byEid)) {
-            const h = await sha256(stable(data));
-            if (hashes[eid] !== h) { updates[`schedule/${eid}`] = data; updates[`hashes/${eid}`] = h; changed++; }
-            updates[`locations/${eid}`] = locations[eid] || null;
-        }
-        Object.keys(hashes).forEach(eid => {
-            if (!byEid[eid]) { updates[`schedule/${eid}`] = null; updates[`hashes/${eid}`] = null; updates[`locations/${eid}`] = null; changed++; }
-        });
-        updates.meta = {
-            hash, updatedAt: serverTimestamp(), updatedBy: state.currentUser.name, source: 'browser',
-            employees: Object.keys(byEid).length, changed, unmatched
-        };
-        await update(ref(db, 'scheduleData'), updates);
-        showToast(`Schedule updated from Google Sheets (${changed} ${changed === 1 ? 'person' : 'people'} changed)`, 'success');
-        auditLog('Schedule synced', `${changed} changed, ${Object.keys(byEid).length} employees`);
+        // The login-page roster has its own check (it also changes when the day changes)
+        const rosterChanged = await syncRoster(byEid, locations);
+        if (!scheduleChanged && !silent) showToast(rosterChanged ? 'Login roster refreshed' : 'Schedule is already up to date', 'success');
     } catch (err) {
         console.error('Schedule sync failed', err);
         if (!silent) showToast('Schedule sync failed: ' + err.message, 'error');
