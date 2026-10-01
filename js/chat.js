@@ -1,6 +1,6 @@
 import { query, limitToLast } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 import {
-    db, ref, get, set, push, remove, onValue, serverTimestamp, WORK_TZ,
+    db, ref, get, set, push, remove, onValue, serverTimestamp, WORK_TZ, beep,
     state, bus, $, on, esc, avatar, isAdmin, fullNameOf, profileKey, showToast, closeModal
 } from './core.js';
 import { groupFor } from './schedule.js';
@@ -26,17 +26,6 @@ const dayLabel = ts => {
 };
 const listTime = ts => !ts ? '' : (dayKey(ts) === dayKey(Date.now()) ? fmtTime(ts) : new Date(ts).toLocaleDateString('en-GB', { timeZone: WORK_TZ, day: 'numeric', month: 'short' }));
 
-function beep() {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator(), gain = ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.frequency.value = 880; gain.gain.setValueAtTime(0.05, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.00001, ctx.currentTime + 0.3);
-        osc.start(); osc.stop(ctx.currentTime + 0.3);
-    } catch (e) { /* audio not available */ }
-}
-
 // ---------- Directory (admin keeps it in sync; everyone reads it) ----------
 let syncTimer = null;
 function syncDirectory() {
@@ -48,20 +37,21 @@ function syncDirectory() {
             if (!e.employeeId) return;
             const name = fullNameOf(e);
             const prof = state.profiles.find(p => p.id === profileKey(name));
+            const r = String(prof?.role || 'USER').toUpperCase();
             obj[e.employeeId] = {
-                name, group: groupFor(name), status: e.status || 'active',
-                role: String(prof?.role || 'USER').toUpperCase() === 'ADMIN' ? 'ADMIN' : 'USER'
+                name, group: groupFor(name), status: e.status || 'active', logType: e.logType || 'Logs',
+                role: r === 'ADMIN' || r === 'LEADER' ? r : 'USER'
             };
         });
         const u = state.currentUser;
-        if (u.employeeId && !obj[u.employeeId]) obj[u.employeeId] = { name: u.name, group: 'General', status: 'active', role: 'ADMIN' };
+        if (u.employeeId && !obj[u.employeeId]) obj[u.employeeId] = { name: u.name, group: 'General', status: 'active', role: 'ADMIN', logType: 'Logs' };
         try { await set(ref(db, 'directory'), obj); } catch (err) { console.warn('Directory sync failed', err); }
     }, 600);
 }
 
 // ---------- Who may chat with whom ----------
 function canChat(person, myDir) {
-    if (isAdmin() || person.role === 'ADMIN') return true;
+    if (isAdmin() || person.role === 'ADMIN' || person.role === 'LEADER') return true;
     const v = C.settings.visibility;
     if (v === 'ALL') return true;
     if (v === 'GROUP') return !!person.group && person.group === myDir.group;
@@ -152,7 +142,9 @@ function openRoom(id) {
     $('chatRoom').style.display = 'flex';
     $('chatRoomTitle').textContent = roomTitle(meta);
     const other = meta.type === 'direct' ? C.dir[Object.keys(meta.members || {}).find(k => k !== me())] : null;
-    $('chatRoomSub').textContent = meta.type === 'group' ? `${Object.keys(meta.members || {}).length} members` : (other ? `${other.group || ''}${other.role === 'ADMIN' ? ' · Management' : ''}` : '');
+    $('chatRoomSub').textContent = meta.type === 'group'
+        ? `${Object.keys(meta.members || {}).length} members`
+        : (other ? `${other.group || ''}${other.role === 'ADMIN' || other.role === 'LEADER' ? ' · Management' : ''}` : '');
     $('chatDeleteBtn').style.display = (meta.type === 'group' && (isAdmin() || meta.createdBy === me())) ? '' : 'none';
     C.msgUnsub = onValue(query(ref(db, `chats/messages/${id}`), limitToLast(150)), snap => {
         C.msgs[id] = snap.val() || {};
@@ -231,7 +223,7 @@ function renderPickList() {
     const people = allowedPeople().filter(p => !q || p.name.toLowerCase().includes(q));
     $('chatPickList').innerHTML = people.map(p => `
         <div class="pick-item" data-eid="${esc(p.eid)}"><img src="${avatar(p.name)}" alt="">
-        <div><strong>${esc(p.name)}</strong><small>${esc(p.group || '')}${p.role === 'ADMIN' ? ' · Management' : ''}</small></div></div>`).join('')
+        <div><strong>${esc(p.name)}</strong><small>${esc(p.group || '')}${p.role === 'ADMIN' || p.role === 'LEADER' ? ' · Management' : ''}</small></div></div>`).join('')
         || '<p class="md-hint">No one available to message.</p>';
 }
 
