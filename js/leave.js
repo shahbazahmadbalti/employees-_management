@@ -1,5 +1,5 @@
 import {
-    state, LEAVE_ALLOWANCE, bus, $, on, esc, avatar, isAdmin, sameName, findEmployee, fullNameOf,
+    state, LEAVE_ALLOWANCE, bus, $, on, esc, avatar, isAdmin, isLeader, sameName, findEmployee, fullNameOf,
     api, showToast, closeModal, updateNotifications, formatDate, formatLeaveType
 } from './core.js';
 import { updateDropdowns } from './employees.js';
@@ -9,9 +9,17 @@ const daysBetween = (from, to) => {
     return d > 0 ? d : 0;
 };
 
+// Leaders manage the people of their groups (never their own requests)
+const inMyGroups = eid => {
+    const g = state.directory?.[eid]?.group;
+    return !!g && state.currentUser.leaderGroups.includes(g);
+};
+const canDecide = lv => isAdmin() || (isLeader() && lv.employeeId !== state.currentUser.employeeId && inMyGroups(lv.employeeId));
+
 function visibleLeave() {
     let list = [...state.leave];
-    if (!isAdmin()) list = list.filter(l => sameName(l.employee, state.currentUser.name));
+    if (isLeader()) list = list.filter(l => l.employeeId === state.currentUser.employeeId || inMyGroups(l.employeeId));
+    else if (!isAdmin()) list = list.filter(l => sameName(l.employee, state.currentUser.name));
     const status = $('leaveStatus').value, type = $('leaveType').value;
     if (status) list = list.filter(l => l.status === status);
     if (type) list = list.filter(l => l.type === type);
@@ -28,11 +36,12 @@ export function renderLeave() {
             <td>${esc(lv.days)} days</td>
             <td>${esc(lv.reason)}</td>
             <td><span class="status-badge ${esc(lv.status)}">${esc(lv.status)}</span></td>
-            <td>${isAdmin() && lv.status === 'pending' ? `
+            <td>${canDecide(lv) && lv.status === 'pending' ? `
                 <button class="btn-icon" onclick="approveLeave('${esc(lv.id)}')" title="Approve"><i class="fas fa-check"></i></button>
                 <button class="btn-icon" onclick="rejectLeave('${esc(lv.id)}')" title="Reject"><i class="fas fa-times"></i></button>` : '-'}</td>
         </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;">No leave requests</td></tr>';
 
+    // Balance cards always show the signed-in person's own leave (admins see the whole company)
     const mine = isAdmin() ? state.leave : state.leave.filter(l => sameName(l.employee, state.currentUser.name));
     document.querySelectorAll('.leave-stat-card').forEach(card => {
         const type = card.dataset.type, total = LEAVE_ALLOWANCE[type] || 0;
