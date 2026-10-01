@@ -29,7 +29,7 @@ Object.assign(window, {
 // Each file may export:  features = ['name', ...]   (data-feature values to switch on)
 //                        async init(ctx) -> { windowApi? }   (functions for inline onclick handlers)
 // Files that do not exist yet are skipped silently.
-const FEATURE_MODULES = ['./notices.js', './leaders.js', './audit.js', './admin.js', './prefs.js'];
+const FEATURE_MODULES = ['./notices.js', './leaders.js', './audit.js', './admin.js', './prefs.js', './tasks.js', './events.js'];
 const MISSING = /Failed to fetch|Importing a module script failed|error loading dynamically|Load failed/i;
 
 async function loadFeatureModules() {
