@@ -17,33 +17,49 @@ function ago(ts) {
 
 // Own leave decisions the person has not looked at yet. Decisions that existed before the
 // first run are treated as already seen, so nobody gets a pile of old alerts.
+const ownDecisions = () => state.leave.filter(l => (l.status === 'approved' || l.status === 'rejected') && l.employeeId === state.currentUser.employeeId);
+const saveSeen = () => localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-300)));
 function ensureSeen() {
     if (seen) return;
     const raw = localStorage.getItem(SEEN_KEY);
     seen = new Set(JSON.parse(raw || '[]'));
-    if (raw === null) {
-        ownDecisions().forEach(l => seen.add(`${l.id}:${l.status}`));
-        saveSeen();
-    }
+    if (raw === null) { ownDecisions().forEach(l => seen.add(`${l.id}:${l.status}`)); saveSeen(); }
 }
-const saveSeen = () => localStorage.setItem(SEEN_KEY, JSON.stringify([...seen].slice(-300)));
-const ownDecisions = () => state.leave.filter(l => (l.status === 'approved' || l.status === 'rejected') &&
-    (l.employeeId === state.currentUser.employeeId));
 
 function buildItems() {
     const items = [];
     const u = state.currentUser;
 
+    // Messages
     (state.chatUnread || []).forEach(c => items.push({
         type: 'chat', icon: 'fa-comment', title: `Message from ${c.title}`, text: c.text, ts: c.ts,
         go: () => { bus.emit('chat:open', c.id); showSection('messages'); }
     }));
 
+    // Notices
     (state.noticeUnread || []).forEach(n => items.push({
         type: 'notice', icon: 'fa-bullhorn', title: `Notice: ${n.title}`, text: n.byName ? `from ${n.byName}` : '', ts: n.ts,
         go: () => showSection('notices')
     }));
 
+    // Tasks: new assignments and completions
+    (state.taskAlerts || []).forEach(a => items.push(a.kind === 'assigned' ? {
+        type: 'task', icon: 'fa-list-check', title: `New task: ${a.title}`,
+        text: `from ${a.byName || 'management'}${a.due ? ` · due ${a.due}` : ''}`, ts: a.ts,
+        go: () => { bus.emit('tasks:open', { id: a.id }); showSection('tasks'); }
+    } : {
+        type: 'task', icon: 'fa-circle-check', title: `${a.who} completed "${a.title}"`, text: 'Task completed', ts: a.ts,
+        go: () => { bus.emit('tasks:open', { id: a.id, scope: 'created' }); showSection('tasks'); }
+    }));
+
+    // Events: new invitations and today's reminders
+    (state.eventAlerts || []).forEach(a => items.push({
+        type: 'event', icon: a.kind === 'today' ? 'fa-bell' : 'fa-calendar-day',
+        title: a.kind === 'today' ? `Today: ${a.title}` : `New event: ${a.title}`,
+        text: `${a.date}${a.time ? ' · ' + a.time : ''}`, ts: a.ts, go: () => showSection('events')
+    }));
+
+    // Management notes on my day
     (state.noteAlertDates || []).forEach(d => items.push({
         type: 'note', icon: 'fa-note-sticky', title: 'Management left a note on your day', text: d,
         ts: (state.noteAlertTimes && state.noteAlertTimes[d]) || Date.parse(d + 'T12:00:00Z'),
@@ -51,6 +67,7 @@ function buildItems() {
     }));
 
     if (isManager()) {
+        // Employees replying to my notes
         Object.entries(state.replyAlertMap || {}).forEach(([date, map]) => {
             Object.entries(map || {}).forEach(([eid, ts]) => {
                 if (!isAdmin() && !myGroupMember(eid)) return;
@@ -61,6 +78,7 @@ function buildItems() {
             });
         });
 
+        // Leave requests waiting for me
         state.leave.filter(l => l.status === 'pending').forEach(l => {
             const decidable = isAdmin() || (isLeader() && l.employeeId !== u.employeeId && inMyGroups(l.employeeId));
             if (!decidable) return;
@@ -72,6 +90,7 @@ function buildItems() {
         });
     }
 
+    // My own leave decisions
     if (dataReady) {
         ensureSeen();
         ownDecisions().filter(l => !seen.has(`${l.id}:${l.status}`)).forEach(l => items.push({
