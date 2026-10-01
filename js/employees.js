@@ -131,7 +131,9 @@ async function saveEmployee() {
     const fullName = `${firstName} ${lastName}`;
     const employeeId = F.employeeId.value.trim();
     const newPassword = F.password.disabled ? '' : F.password.value;
-    const role = F.role.value === 'ADMIN' ? 'ADMIN' : 'USER';
+    const role = ['ADMIN', 'LEADER'].includes(F.role.value) ? F.role.value : 'USER';
+    const leaderGroups = role === 'LEADER' ? (F.leaderGroups.value || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+
     const logType = F.logType.value === 'Logs_SDI' ? 'Logs_SDI' : 'Logs';
     const needsLogin = !existing || !existing.uid;
     const creatingLogin = needsLogin && !!newPassword;
