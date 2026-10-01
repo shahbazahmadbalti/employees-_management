@@ -255,43 +255,170 @@ function populateScheduleFilters() {
 export function renderSchedule() {
     $('scheduleLoading').style.display = 'none';
     $('scheduleTable').style.display = 'table';
-    const tbody = $('scheduleBody'), theadRow = $('scheduleHead').querySelector('tr');
-    const selMonth = $('schedMonth').value, selYear = $('schedYear').value;
-    const selLoc = $('schedLocation').value, selEmp = $('schedEmployee').value;
+
+    const tbody = $('scheduleBody');
+    const theadRow = $('scheduleHead').querySelector('tr');
+    const selMonth = $('schedMonth').value;
+    const selYear = $('schedYear').value;
+    const selLoc = $('schedLocation').value;
+    const selEmp = $('schedEmployee').value;
     const days = new Date(Number(selYear), MONTHS.indexOf(selMonth) + 1, 0).getDate();
 
-    let head = '<th style="position: sticky; left: 0; background: #f8fafc; z-index: 2; width: 150px; text-align: left;">EMPLOYEE NAME</th>';
-    for (let i = 1; i <= days; i++) head += `<th style="text-align: center;">${i}</th>`;
-    head += '<th style="text-align: center; width: 80px;">TOTAL HOURS</th>';
+    const shiftStyle = value => {
+        const label = String(value || '').trim();
+        const s = label.toUpperCase();
+
+        /* Personal leave / holidays: green */
+        if (
+            s.includes('P.HOLIDAY') ||
+            s.includes('PERSONAL HOLIDAY') ||
+            s.includes('ANNUAL LEAVE') ||
+            s.includes('HOLIDAY') ||
+            s.includes('AWAY') ||
+            s.includes('LEAVE')
+        ) {
+            return { bg: '#dcfce7', fg: '#166534', border: '#86efac', type: 'holiday' };
+        }
+
+        /* Sick leave */
+        if (s.includes('SICK')) {
+            return { bg: '#fee2e2', fg: '#991b1b', border: '#fca5a5', type: 'sick' };
+        }
+
+        /* Scheduled off day */
+        if (s === 'OFF' || s === 'REST' || s === 'R') {
+            return { bg: '#f1f5f9', fg: '#64748b', border: '#cbd5e1', type: 'off' };
+        }
+
+        /* Night shifts: dark */
+        if (
+            s === 'N' ||
+            s.includes('(N)') ||
+            s.includes('NIGHT') ||
+            /\bN\b/.test(s)
+        ) {
+            return { bg: '#312e81', fg: '#eef2ff', border: '#4338ca', type: 'night' };
+        }
+
+        /* Day shifts: light */
+        if (
+            s === 'D' ||
+            s.includes('(D)') ||
+            s.includes('DAY') ||
+            /\bD\b/.test(s)
+        ) {
+            return { bg: '#fef3c7', fg: '#92400e', border: '#fde68a', type: 'day' };
+        }
+
+        /* Other operational shifts */
+        if (s.includes('FA')) {
+            return { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd', type: 'fa' };
+        }
+        if (s.includes('P2') || s.includes('P1')) {
+            return { bg: '#d1fae5', fg: '#065f46', border: '#6ee7b7', type: 'p2' };
+        }
+        if (s.includes('AD') || s.includes('SUP')) {
+            return { bg: '#ffedd5', fg: '#9a3412', border: '#fdba74', type: 'support' };
+        }
+
+        return { bg: '#e0e7ff', fg: '#3730a3', border: '#a5b4fc', type: 'other' };
+    };
+
+    let head = `
+        <th class="schedule-name-head"
+            style="position:sticky;left:0;background:#f8fafc;z-index:4;width:170px;min-width:170px;text-align:left;">
+            EMPLOYEE NAME
+        </th>`;
+
+    for (let i = 1; i <= days; i++) {
+        const jsDate = new Date(Number(selYear), MONTHS.indexOf(selMonth), i);
+        const weekday = jsDate.getDay();
+        const weekend = weekday === 0 || weekday === 6;
+
+        head += `
+            <th class="${weekend ? 'schedule-weekend' : ''}"
+                style="text-align:center;min-width:48px;">
+                ${i}
+            </th>`;
+    }
+
+    head += `
+        <th class="schedule-total-head"
+            style="position:sticky;right:0;background:#f8fafc;z-index:4;text-align:center;width:84px;min-width:84px;">
+            HOURS
+        </th>`;
+
     theadRow.innerHTML = head;
 
     let names = Object.keys(state.schedule || {});
-    if (!isManager()) names = names.filter(n => sameName(n, state.currentUser.name));
-    if (selEmp !== 'All') names = names.filter(n => n === selEmp);
-    if (selLoc !== 'All') names = names.filter(n => [].concat(state.employeeLocations?.[n] || []).includes(selLoc));
+
+    if (!isManager()) {
+        names = names.filter(n => sameName(n, state.currentUser.name));
+    }
+    if (selEmp !== 'All') {
+        names = names.filter(n => n === selEmp);
+    }
+    if (selLoc !== 'All') {
+        names = names.filter(n => [].concat(state.employeeLocations?.[n] || []).includes(selLoc));
+    }
+
     names.sort((a, b) => a.localeCompare(b));
 
     if (!names.length) {
-        tbody.innerHTML = `<tr><td colspan="${days + 2}" style="text-align: center; padding: 16px;">No schedule data available</td></tr>`;
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="${days + 2}" style="text-align:center;padding:24px;">
+                    No schedule data available for the selected filters.
+                </td>
+            </tr>`;
         return;
     }
 
     tbody.innerHTML = names.map(name => {
-        let total = 0, cells = '';
-        const sched = state.schedule[name]?.[selYear]?.[selMonth] || {};
+        let total = 0;
+        let cells = '';
+
+        const empSchedule = state.schedule[name]?.[selYear]?.[selMonth] || {};
+
         for (let i = 1; i <= days; i++) {
-            const d = sched[i];
-            if (d && d.area) {
-                const label = String(d.area);
-                const [bg, fg] = label.includes('FA') ? COLORS.FA : label.includes('P2') ? COLORS.P2 : label.includes('AD') ? COLORS.AD : COLORS.DEFAULT;
-                cells += `<td style="padding: 2px;"><div style="font-size: 10px; font-weight: bold; border-radius: 4px; padding: 4px; text-align: center; white-space: nowrap; background: ${bg}; color: ${fg};">${esc(label)}</div></td>`;
-                total += Number(d.hours) > 0 ? Number(d.hours) : 8;
-            } else cells += '<td></td>';
+            const dayData = empSchedule[i];
+            const label = dayData?.area ? String(dayData.area).trim() : '';
+
+            if (label) {
+                const colour = shiftStyle(label);
+                const hours = Number(dayData.hours);
+                if (!Number.isNaN(hours) && hours > 0) {
+                    total += hours;
+                } else if (!['holiday', 'sick', 'off'].includes(colour.type)) {
+                    total += 8;
+                }
+
+                cells += `
+                    <td class="schedule-day-cell">
+                        <div
+                            class="shift-pill shift-${colour.type}"
+                            title="${esc(label)}"
+                            style="background:${colour.bg};color:${colour.fg};border-color:${colour.border};">
+                            ${esc(label)}
+                        </div>
+                    </td>`;
+            } else {
+                cells += '<td class="schedule-day-cell schedule-empty-cell"></td>';
+            }
         }
-        return `<tr>
-            <td style="position: sticky; left: 0; background: white; z-index: 1; font-weight: 500; text-transform: uppercase;">${esc(name)}</td>
-            ${cells}
-            <td style="text-align: center; font-weight: bold;">${total || '-'}</td></tr>`;
+
+        return `
+            <tr>
+                <td class="schedule-name-cell"
+                    style="position:sticky;left:0;background:white;z-index:3;font-weight:700;text-transform:uppercase;width:170px;min-width:170px;">
+                    <span>${esc(name)}</span>
+                </td>
+                ${cells}
+                <td class="schedule-total-cell"
+                    style="position:sticky;right:0;background:white;z-index:3;text-align:center;font-weight:800;width:84px;min-width:84px;">
+                    ${total || '-'}
+                </td>
+            </tr>`;
     }).join('');
 }
 
