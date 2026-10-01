@@ -230,7 +230,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+        import { getDatabase, ref, get, onValue } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBFUcSv1olo8r-dglXvij5Sz4aHAgLWBBA",
@@ -414,57 +414,44 @@
         logo.addEventListener('error', () => { logo.style.display = 'none'; $('logoFallback').style.display = 'grid'; });
         $('homeBtn').href = CONFIG.HOME_URL;
 
-        // ====================== Roster ======================
-        let rosterData = null;
+                // ====================== Roster (live from Firebase) ======================
+        const TZ = 'Europe/Budapest';
+        let rosterByDate = null;          // { 'YYYY-MM-DD': { <pid>: { a: label, g: group, s: start, e: end } } }
+        let photosByPid = {};
         let rosterStatus = 'idle';
+        let rosterSubscribed = false;
         let dayOffset = 0;
-        let photos = {};     // profile photos: { <encoded name>: dataUrl }, from the public publicAvatars node
-        const photoKey = name => encodeURIComponent(String(name || '').trim()).replace(/\./g, '%2E');
 
-        const dateForOffset = o => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + o); return d; };
-        function normTime(v) {
-            const m = String(v ?? '').match(/(\d{1,2}):(\d{2})/);
-            return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
-        }
-        function pickTime(entry, keys) { for (const k of keys) { const v = normTime(entry[k]); if (v) return v; } return null; }
+        const dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: TZ });
+        const timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+        const todayKey = () => dateFmt.format(new Date());
+        const keyForOffset = o => { const d = new Date(todayKey() + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + o); return d.toISOString().slice(0, 10); };
         const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+        const nowMin = () => toMin(timeFmt.format(new Date()));
+
+        // Short anonymous key shared with the sync (the roster carries no names)
+        async function pidOf(eid) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(eid)));
+            return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 16);
+        }
 
         function shiftStatus(offset, start, end) {
             if (offset < 0) return 'done';
             if (offset > 0) return 'scheduled';
             if (!start) return 'scheduled';
-            const now = new Date();
-            const mins = now.getHours() * 60 + now.getMinutes();
-            const s = toMin(start);
+            const mins = nowMin(), s = toMin(start);
             if (mins < s) return 'scheduled';
             if (end) { const e = toMin(end); if (e >= s && mins >= e) return 'done'; }
             return 'active';
         }
 
         function buildShifts(offset) {
-            if (!rosterData) return [];
-            const schedule = rosterData.schedule || {};
-            const locations = rosterData.employeeLocations || {};
-            const images = rosterData.employeeImages || rosterData.images || {};
-            const d = dateForOffset(offset);
-            const year = String(d.getFullYear());
-            const month = MONTHS[d.getMonth()];
-            const day = d.getDate();
-            const out = [];
-
-            Object.keys(schedule).forEach(name => {
-                const entry = schedule[name]?.[year]?.[month]?.[day];
-                if (!entry || !entry.area) return;
-                const start = pickTime(entry, CONFIG.START_KEYS);
-                const end = pickTime(entry, CONFIG.END_KEYS);
-                out.push({
-                    name, label: String(entry.area),
-                    segment: [].concat(locations[name] || [])[0] || t('general'),
-                    start, end, status: shiftStatus(offset, start, end),
-                    img: images[name] || photos[photoKey(name)] || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=4F46E5&color=fff&bold=true`
-                });
-            });
-            return out.sort((a, b) => (a.start || '99:99').localeCompare(b.start || '99:99') || a.label.localeCompare(b.label));
+            const day = (rosterByDate && rosterByDate[keyForOffset(offset)]) || {};
+            return Object.entries(day).map(([pid, r]) => ({
+                label: r.a, segment: r.g || t('general'), start: r.s || null, end: r.e || null,
+                status: shiftStatus(offset, r.s, r.e),
+                img: photosByPid[pid] || `https://ui-avatars.com/api/?name=${encodeURIComponent(r.a)}&background=4F46E5&color=fff&bold=true`
+            })).sort((a, b) => (a.start || '99:99').localeCompare(b.start || '99:99') || String(a.label).localeCompare(String(b.label)));
         }
 
         function timeText(s) {
@@ -477,7 +464,8 @@
         function renderRoster() {
             const offset = dayOffset;
             $('rosterTitle').textContent = offset === 0 ? t('today') : offset < 0 ? t('yesterday') : t('tomorrow');
-            $('rosterDate').textContent = dateForOffset(offset).toLocaleDateString(LOCALES[lang], { weekday: 'long', month: 'long', day: 'numeric' });
+            $('rosterDate').textContent = new Date(keyForOffset(offset) + 'T12:00:00Z')
+                .toLocaleDateString(LOCALES[lang], { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
             $('prevDay').disabled = offset <= -1;
             $('nextDay').disabled = offset >= 1;
 
@@ -498,34 +486,31 @@
                 ${groups[seg].map(s => `
                     <div class="shift">
                         <img src="${esc(s.img)}" alt="" loading="lazy">
-                        <div class="shift-main">
-                            <strong>${esc(s.label)}</strong>
-                            ${CONFIG.SHOW_NAMES ? `<span>${esc(s.name)}</span>` : ''}
-                        </div>
+                        <div class="shift-main"><strong>${esc(s.label)}</strong></div>
                         <div class="shift-time ${s.status}">${esc(timeText(s))}</div>
                     </div>`).join('')}
             `).join('');
         }
 
-        async function loadRoster() {
-            if (rosterData || rosterStatus === 'loading') return;
+        // Live: the roster and the photos update here the moment they change in Firebase
+        function startRoster() {
+            if (rosterSubscribed) return;
+            rosterSubscribed = true;
             rosterStatus = 'loading';
             renderRoster();
-            try {
-                const res = await fetch(CONFIG.SCRIPT_URL);
-                if (!res.ok) throw new Error('HTTP ' + res.status);
-                rosterData = await res.json();
-                try {   // profile photos (public node); the roster still works without them
-                    const snap = await get(ref(db, 'publicAvatars'));
-                    photos = Object.fromEntries(Object.entries(snap.val() || {})
-                        .map(([k, v]) => [k, v && v.image]).filter(([, image]) => image));
-                } catch (e) { console.warn('Photos not available', e); }
+            onValue(ref(db, 'publicRoster'), snap => {
+                rosterByDate = snap.val() || {};
                 rosterStatus = 'ready';
-            } catch (err) {
-                console.error('Roster load failed:', err);
-                rosterStatus = 'error';
-            }
-            renderRoster();
+                renderRoster();
+            }, err => { console.error('Roster read failed:', err); rosterStatus = 'error'; renderRoster(); });
+            onValue(ref(db, 'publicAvatars'), async snap => {
+                const out = {};
+                await Promise.all(Object.values(snap.val() || {}).map(async v => {
+                    if (v && v.eid && v.image) out[await pidOf(v.eid)] = v.image;
+                }));
+                photosByPid = out;
+                renderRoster();
+            }, err => console.warn('Photos not available', err));
         }
 
         function toggleRoster() {
@@ -536,8 +521,7 @@
             toggle.classList.toggle('open', open);
             toggle.setAttribute('aria-expanded', String(open));
             if (open) {
-                if (rosterStatus === 'error') { rosterData = null; rosterStatus = 'idle'; }
-                loadRoster();
+                startRoster();
                 setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
             }
         }
@@ -545,6 +529,7 @@
         $('rosterToggle').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRoster(); } });
         $('prevDay').addEventListener('click', () => { if (dayOffset > -1) { dayOffset--; renderRoster(); } });
         $('nextDay').addEventListener('click', () => { if (dayOffset < 1) { dayOffset++; renderRoster(); } });
+
 
         // ====================== Login (Firebase Authentication) ======================
         let submitting = false;
