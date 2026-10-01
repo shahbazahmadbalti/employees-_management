@@ -865,3 +865,15 @@ html body .soon.soon.soon { display: none !important; }
 .notif-ico.task { background: #0EA5E9; }
 .notif-ico.event { background: #EC4899; }
 
+/* ===== Task files ===== */
+.file-group { margin: 0.6rem 0; }
+.file-group h5 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-500); margin-bottom: 0.35rem; }
+.file-row { display: flex; align-items: center; gap: 0.7rem; padding: 0.5rem 0.7rem; margin-bottom: 0.35rem; background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 10px; }
+.file-row > i { font-size: 1.3rem; color: var(--primary-color); width: 24px; text-align: center; }
+.file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.file-info strong { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-info small { color: var(--gray-500); font-size: 0.72rem; }
+.file-row .btn { min-height: 34px; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
+label.btn { cursor: pointer; }
+
+
