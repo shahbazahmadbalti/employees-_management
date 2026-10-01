@@ -836,3 +836,32 @@ html body .soon.soon.soon { display: none !important; }
 .notif-main span { font-size: 0.78rem; color: var(--gray-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .notif-item small { color: var(--gray-400); font-size: 0.68rem; flex-shrink: 0; }
 .notif-empty { padding: 2rem 1rem; text-align: center; color: var(--gray-500); }
+
+/* ===== Tasks & Events ===== */
+.task-list, .event-list { display: flex; flex-direction: column; gap: 1rem; }
+.task, .event { background: white; border: 1px solid var(--gray-200); border-radius: var(--border-radius); padding: 1.1rem 1.25rem; box-shadow: var(--box-shadow); }
+.task.unseen, .event.unseen { border-left: 4px solid var(--primary-color); }
+.task.overdue { border-left: 4px solid var(--danger-color); }
+.task.done { opacity: 0.75; }
+.task-head, .event-head { display: flex; justify-content: space-between; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap; }
+.task-head h3, .event-head h3 { font-size: 1.05rem; }
+.task-meta { color: var(--gray-500); font-size: 0.78rem; margin-top: 0.15rem; }
+.task-desc, .event-desc { margin: 0.6rem 0; white-space: pre-wrap; word-break: break-word; }
+.task-actions, .event-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+.prio-badge { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 0.1rem 0.55rem; border-radius: 999px; text-transform: uppercase; }
+.assignee-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0.5rem 0; }
+.assignee-chips span { font-size: 0.75rem; padding: 0.15rem 0.6rem; border-radius: 999px; background: var(--gray-100); }
+.assignee-chips span.done { background: #d1fae5; color: #065f46; }
+.assignee-chips span.doing { background: #dbeafe; color: #1e40af; }
+.event { display: flex; gap: 1rem; }
+.event-date { width: 58px; flex-shrink: 0; border-radius: 12px; background: #eef2ff; color: var(--primary-color); text-align: center; padding: 0.45rem 0; align-self: flex-start; }
+.event-date strong { display: block; font-size: 1.4rem; line-height: 1.1; }
+.event-date span { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+.event-body { flex: 1; min-width: 0; }
+.rsvp-btn.active { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+.group-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.6rem; }
+.group-chip { border: 1px solid var(--gray-300); background: white; border-radius: 999px; padding: 0.25rem 0.8rem; cursor: pointer; font-size: 0.8rem; font-family: inherit; }
+.group-chip:hover { border-color: var(--primary-color); color: var(--primary-color); }
+.notif-ico.task { background: #0EA5E9; }
+.notif-ico.event { background: #EC4899; }
+
