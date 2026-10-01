@@ -876,4 +876,9 @@ html body .soon.soon.soon { display: none !important; }
 .file-row .btn { min-height: 34px; padding: 0.25rem 0.7rem; font-size: 0.8rem; }
 label.btn { cursor: pointer; }
 
+/* ===== Check-in not available ===== */
+.md-blocked { display: flex; gap: 0.85rem; align-items: flex-start; padding: 1rem 1.1rem; margin-bottom: 1.25rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; color: #991b1b; }
+.md-blocked > i { font-size: 1.4rem; margin-top: 0.1rem; }
+.md-blocked div { display: flex; flex-direction: column; gap: 0.15rem; }
+.md-blocked span { font-size: 0.85rem; color: #b91c1c; }
 
