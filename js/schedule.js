@@ -64,16 +64,22 @@ export function groupFor(name) {
 
 // ==================== Group membership ====================
 
+function splitGroups(value) {
+    return String(value || '')
+        .split(',')
+        .map(group => group.trim().toLowerCase())
+        .filter(Boolean);
+}
+
 function myGroups() {
-    const raw =
-        state.directory?.[state.currentUser.employeeId]?.group ||
-        groupFor(state.currentUser.name);
+    const me = state.currentUser.employeeId;
 
     return new Set(
-        String(raw)
-            .split(',')
-            .map(group => group.trim().toLowerCase())
-            .filter(Boolean)
+        splitGroups(
+            S.locations[me] ||
+            state.directory?.[me]?.group ||
+            groupFor(state.currentUser.name)
+        )
     );
 }
 
@@ -81,17 +87,18 @@ function groupMemberIds() {
     const mine = myGroups();
     const ids = new Set([state.currentUser.employeeId]);
 
-    Object.entries(state.directory || {}).forEach(([id, person]) => {
-        const groups = String(person.group || 'General')
-            .split(',')
-            .map(group => group.trim().toLowerCase());
+    // Primary source: scheduleData/locations (employeeId -> group string)
+    Object.entries(S.locations || {}).forEach(([id, location]) => {
+        if (splitGroups(location).some(group => mine.has(group))) ids.add(id);
+    });
 
-        if (groups.some(group => mine.has(group))) ids.add(id);
+    // Backup source: directory
+    Object.entries(state.directory || {}).forEach(([id, person]) => {
+        if (splitGroups(person.group).some(group => mine.has(group))) ids.add(id);
     });
 
     return [...ids].filter(Boolean);
 }
-
 // ==================== Shift and group styles ====================
 
 function shiftStyle(value) {
@@ -415,6 +422,17 @@ function subscribe() {
         }
     );
 
+        onValue(
+        ref(db, 'scheduleData/locations'),
+        snapshot => {
+            S.locations = snapshot.val() || {};
+
+            if (!isManager()) watchGroupMembers();
+            if (S.ready) applySchedule();
+        },
+        error => console.warn('schedule locations', error)
+    );
+
     if (isManager()) {
         onValue(
             ref(db, 'scheduleData/schedule'),
@@ -428,16 +446,6 @@ function subscribe() {
                 R.data = true;
                 maybeApply();
             }
-        );
-
-        onValue(
-            ref(db, 'scheduleData/locations'),
-            snapshot => {
-                S.locations = snapshot.val() || {};
-
-                if (S.ready) applySchedule();
-            },
-            error => console.warn('schedule locations', error)
         );
     } else {
         watchGroupMembers();
